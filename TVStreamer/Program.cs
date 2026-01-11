@@ -2,6 +2,7 @@
 using com.lightstreamer.client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using System.Globalization;
 using System.Text.Json;
 using TVStreamer.Models;
 using TVStreamer.Streaming;
@@ -23,7 +24,7 @@ internal class Program
         var password = ig["Password"]!;
 
         var ingest = config.GetSection("WebIngest");
-        var ingestUrl = ingest["Url"]!;
+        var ingestUrl = ingest["Url"]!;        // e.g., https://localhost:7199/api/stream/positions
         var ingestKey = ingest["IngestKey"]!;
 
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
@@ -57,7 +58,41 @@ internal class Program
 
         Console.WriteLine($"[IG] Open positions: {positions.Count}");
 
-        // snapshots for TVWeb
+        // 2a) Fetch market details per epic (to compute ValuePerPoint from instrument.unit/contractSize)
+        //     IG REST: /markets/{epic} returns instrument.contractSize and instrument.unit (CONTRACTS | AMOUNT)  [2](https://labs.ig.com/reference/markets-epic.html)
+        var valuePerPointByEpic = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        foreach (var epic in positions.Select(p => p.Epic).Distinct())
+        {
+            try
+            {
+                var mdResp = await http.GetAsync($"{baseUrl}/markets/{epic}");
+                mdResp.EnsureSuccessStatusCode();
+                using var md = JsonDocument.Parse(await mdResp.Content.ReadAsStringAsync());
+                var instrument = md.RootElement.GetProperty("instrument");
+                var unit = instrument.TryGetProperty("unit", out var uEl) ? uEl.GetString() : null; // e.g., CONTRACTS | AMOUNT
+                var contractSizeStr = instrument.TryGetProperty("contractSize", out var csEl) ? csEl.GetString() : "1";
+
+                // Heuristic:
+                // - If unit == CONTRACTS, use contractSize as ValuePerPoint
+                // - Else (AMOUNT), default to 1
+                // This aligns with common CFD P&L formula (price diff × lots × contract size). [3](https://www.bullwaves.com/helpcenter/how-to-calculate-profit-or-loss-for-cfd-positions)
+                decimal vpp = 1m;
+                if (string.Equals(unit, "CONTRACTS", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (decimal.TryParse(contractSizeStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var cs))
+                        vpp = cs;
+                }
+                valuePerPointByEpic[epic] = vpp;
+                Console.WriteLine($"[IG] {epic} ValuePerPoint={vpp} (unit={unit}, contractSize={contractSizeStr})");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[IG] markets/{epic} failed: {ex.Message} — defaulting ValuePerPoint=1");
+                valuePerPointByEpic[epic] = 1m;
+            }
+        }
+
+        // snapshots for TVWeb (array) — include ValuePerPoint to fix P/L scale
         var snapshotsPayload = positions.Select(p => new
         {
             type = "snapshot",
@@ -67,16 +102,17 @@ internal class Program
             size = p.Size,
             openLevel = p.OpenLevel,
             bid = (decimal?)null,
-            ask = (decimal?)null
+            ask = (decimal?)null,
+            valuePerPoint = valuePerPointByEpic.TryGetValue(p.Epic, out var vpp) ? vpp : 1m
         });
+
+        // Post to single ingest endpoint
         await HttpPoster.PostJsonAsync(ingestUrl, ingestKey, snapshotsPayload);
 
         // 3) Lightstreamer client
         var client = new LightstreamerClient(auth.LightstreamerEndpoint, "DEFAULT");
         client.connectionDetails.User = auth.AccountId;
-        client.connectionDetails.Password = $"CST-{auth.Cst}|XST-{auth.Xst}"; // IG streaming password format [4](https://labs.ig.com/streaming-api-guide.html)
-        client.connectionOptions.ForcedTransport = "WS-STREAMING"; // optional; comment if you prefer auto
-
+        client.connectionDetails.Password = $"CST-{auth.Cst}|XST-{auth.Xst}"; // IG-required format  [1](https://labs.ig.com/rest-trading-api-reference.html)
         client.connect();
         Console.WriteLine($"[LS] Connecting to {auth.LightstreamerEndpoint} …");
 
@@ -97,7 +133,6 @@ internal class Program
                     var resp = await http.GetAsync($"{baseUrl}/positions");
                     resp.EnsureSuccessStatusCode();
                     using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-
                     var fresh = doc.RootElement.GetProperty("positions")
                         .EnumerateArray()
                         .Select(p => new PositionInfo(
@@ -119,7 +154,8 @@ internal class Program
                     {
                         if (toAdd.Count > 0)
                         {
-                            var payload = toAdd.Select(p => new {
+                            var payload = toAdd.Select(p => new
+                            {
                                 type = "snapshot",
                                 dealId = p.DealId,
                                 epic = p.Epic,
@@ -127,12 +163,17 @@ internal class Program
                                 size = p.Size,
                                 openLevel = p.OpenLevel,
                                 bid = (decimal?)null,
-                                ask = (decimal?)null
+                                ask = (decimal?)null,
+                                valuePerPoint = valuePerPointByEpic.TryGetValue(p.Epic, out var vpp) ? vpp : 1m
                             });
                             await HttpPoster.PostJsonAsync(ingestUrl, ingestKey, payload);
                         }
+
                         foreach (var r in toRemove)
-                            await HttpPoster.PostJsonAsync(ingestUrl, ingestKey, new { type = "closed", dealId = r.DealId, epic = r.Epic });
+                        {
+                            await HttpPoster.PostJsonAsync(ingestUrl, ingestKey,
+                                new { type = "closed", dealId = r.DealId, epic = r.Epic });
+                        }
 
                         positions = fresh;
                         price.Resubscribe(positions, auth.AccountId);
@@ -143,6 +184,7 @@ internal class Program
                 {
                     Console.WriteLine($"[RECON] reconcile error: {ex.Message}");
                 }
+
                 await Task.Delay(TimeSpan.FromSeconds(60));
             }
         });

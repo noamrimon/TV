@@ -9,11 +9,14 @@ public sealed record PositionSnapshot(
     decimal? Bid,
     decimal? Ask,
     decimal? OpenLevel,
-    DateTimeOffset? LastUpdatedUtc);
+    DateTimeOffset? LastUpdatedUtc,
+    decimal? ValuePerPoint // <-- new
+);
 
 public sealed record PriceTick(
     string Epic,
     string DealId,
     decimal? Bid,
     decimal? Ask,
-    DateTimeOffset? TimestampUtc);
+    DateTimeOffset? TimestampUtc
+);

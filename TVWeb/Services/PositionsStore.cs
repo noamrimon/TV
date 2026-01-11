@@ -7,7 +7,6 @@ public sealed class PositionsStore
 {
     private readonly object _sync = new();
     private readonly Dictionary<string, PositionSnapshot> _byDealId = new(StringComparer.OrdinalIgnoreCase);
-
     public event EventHandler? PositionsChanged;
 
     public List<PositionSnapshot> GetAll()
@@ -35,7 +34,7 @@ public sealed class PositionsStore
                 {
                     Bid = tick.Bid ?? s.Bid,
                     Ask = tick.Ask ?? s.Ask,
-                    LastUpdatedUtc = tick.TimestampUtc
+                    LastUpdatedUtc = tick.TimestampUtc ?? s.LastUpdatedUtc
                 };
                 _byDealId[tick.DealId] = updated;
             }

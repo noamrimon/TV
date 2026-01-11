@@ -28,12 +28,16 @@
 .positions-table {
     width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;
 }
 
     .positions-table th,
     .positions-table td {
         padding: .4rem .5rem;
         border-bottom: 1px solid #e6e6e6;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .positions-table thead th {

@@ -8,11 +8,22 @@
 <h1>Open Positions</h1>
 
 <div class="toolbar">
+    <!-- Epic auto-complete via datalist -->
     <input class="filter-input"
            type="text"
            placeholder="Filter by Epic…"
+           list="epicsList"
            @bind="filterText"
            @bind:event="oninput" />
+    <datalist id="epicsList">
+        @foreach (var epic in (_positions ?? Enumerable.Empty<PositionSnapshot>())
+                .Select(p => p.Epic)
+                .Distinct()
+                .OrderBy(x => x))
+        {
+            <option value="@epic"></option>
+        }
+    </datalist>
 
     <button class="btn" @onclick="SelectAllFiltered">Select all (filtered)</button>
     <button class="btn" @onclick="ClearSelection">Clear selection</button>
@@ -26,52 +37,56 @@ else
 {
     var displayed = GetDisplayedPositions();
 
-    <table class="positions-table">
-        <thead>
-            <tr>
-                <th style="width:2rem;"></th>
-                <th>Epic</th>
-                <th>Direction</th>
-                <th class="num">Size</th>
-                <th class="num">Open</th>
-                <th class="num">Bid</th>
-                <th class="num">Ask</th>
-                <th class="num">P/L</th>
-                <th class="num">Updated (UTC)</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var p in displayed)
-            {
-                var pl = ComputePl(p);
-                var rowClass = pl > 0m ? "profit" : pl < 0m ? "loss" : "even";
-                <tr class="@rowClass" @key="p.DealId">
-                    <td>
-                        <input type="checkbox"
-                               checked="@IsSelected(p.DealId)"
-                               @onchange="(e) => ToggleSelect(p.DealId, ((ChangeEventArgs)e).Value)" />
-                    </td>
-                    <td>@p.Epic</td>
-                    <td>@p.Direction</td>
-                    <td class="num">@p.Size</td>
-                    <td class="num">@Format(p.OpenLevel)</td>
-                    <td class="num">@Format(p.Bid)</td>
-                    <td class="num">@Format(p.Ask)</td>
-                    <td class="num pl">@Format(pl)</td>
-                    <td class="num">@p.LastUpdatedUtc?.ToString("HH:mm:ss")</td>
+    if (!displayed.Any())
+    {
+        <p>No positions match the current filter.</p>
+    }
+    else
+    {
+        <table class="positions-table">
+            <thead>
+                <tr>
+                    <th style="width:2rem;"></th>
+                    <th>Epic</th>
+                    <th>Direction</th>
+                    <th class="num">Size</th>
+                    <th class="num">Open</th>
+                    <th class="num">Bid</th>
+                    <th class="num">Ask</th>
+                    <th class="num">P/L</th>
+                    <th class="num">Updated (UTC)</th>
                 </tr>
-            }
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                @foreach (var p in displayed)
+                {
+                    var pl = ComputePl(p);
+                    var rowClass = pl > 0m ? "profit" : pl < 0m ? "loss" : "even";
+                    <tr class="@rowClass" @key="p.DealId">
+                        <td>
+                            <input type="checkbox"
+                                   checked="@IsSelected(p.DealId)"
+                                   @onchange="(e) => ToggleSelect(p.DealId, ((ChangeEventArgs)e).Value)" />
+                        </td>
+                        <td>@p.Epic</td>
+                        <td>@p.Direction</td>
+                        <td class="num">@p.Size</td>
+                        <td class="num">@Format(p.OpenLevel)</td>
+                        <td class="num">@Format(p.Bid)</td>
+                        <td class="num">@Format(p.Ask)</td>
+                        <td class="num pl">@Format(pl)</td>
+                        <td class="num">@p.LastUpdatedUtc?.ToString("HH:mm:ss")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
 
-    <div class="summary">
-        <div>
-            <strong>Selected:</strong> @selected.Count
+        <!-- Selected Positions Total P/L -->
+        <div class="summary @GetTotalClass()">
+            <div><strong>Selected:</strong> @selected.Count</div>
+            <div><strong>Selected Positions Total P/L:</strong> @Format(TotalSelectedPl())</div>
         </div>
-        <div>
-            <strong>Total P/L (selected):</strong> @Format(TotalSelectedPl())
-        </div>
-    </div>
+    }
 }
 
 @code {
@@ -95,15 +110,17 @@ else
 
     public void Dispose() => Store.PositionsChanged -= OnPositionsChanged;
 
-    // -- filtering & selection --
+    // Filtering: case-insensitive, trims whitespace
     private IEnumerable<PositionSnapshot> GetDisplayedPositions()
     {
         if (_positions is null) return Array.Empty<PositionSnapshot>();
-        if (string.IsNullOrWhiteSpace(filterText))
+        var needle = (filterText ?? string.Empty).Trim();
+
+        if (string.IsNullOrEmpty(needle))
             return _positions.OrderBy(p => p.Epic);
 
         return _positions
-            .Where(p => p.Epic.Contains(filterText, StringComparison.OrdinalIgnoreCase))
+            .Where(p => p.Epic.Contains(needle, StringComparison.OrdinalIgnoreCase))
             .OrderBy(p => p.Epic);
     }
 
@@ -116,35 +133,38 @@ else
         else selected.Remove(dealId);
     }
 
-    private void SelectAllFiltered()
+    private async Task SelectAllFiltered()
     {
         foreach (var p in GetDisplayedPositions())
             selected.Add(p.DealId);
+        await InvokeAsync(StateHasChanged);
     }
 
-    private void ClearSelection() => selected.Clear();
+    private async Task ClearSelection()
+    {
+        selected.Clear();
+        await InvokeAsync(StateHasChanged);
+    }
 
-    // -- P/L calculation --
+    // ----- P/L calculation with ValuePerPoint -----
+    // P/L = (current - open) × size × ValuePerPoint for BUY
+    // P/L = (open - current) × size × ValuePerPoint for SELL
     private decimal ComputePl(PositionSnapshot p)
     {
         if (!(p.OpenLevel is decimal open)) return 0m;
+        var vpp = p.ValuePerPoint ?? 1m;
 
-        // IG directions are typically "BUY" or "SELL".
         var dir = p.Direction?.Trim().ToUpperInvariant();
-
         if (dir == "BUY")
         {
-            // close a long at the current Bid
             var current = p.Bid ?? p.Ask ?? open;
-            return (current - open) * p.Size;
+            return (current - open) * p.Size * vpp;
         }
         else if (dir == "SELL")
         {
-            // close a short at the current Ask
             var current = p.Ask ?? p.Bid ?? open;
-            return (open - current) * p.Size;
+            return (open - current) * p.Size * vpp;
         }
-
         return 0m;
     }
 
@@ -152,6 +172,12 @@ else
         => (_positions ?? Enumerable.Empty<PositionSnapshot>())
            .Where(p => selected.Contains(p.DealId))
            .Sum(ComputePl);
+
+    private string GetTotalClass()
+    {
+        var totalPl = TotalSelectedPl();
+        return totalPl > 0m ? "profit" : totalPl < 0m ? "loss" : "even";
+    }
 
     private static string Format(decimal? value)
         => value is decimal v ? v.ToString("0.#####") : "-";
