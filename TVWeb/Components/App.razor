@@ -1,0 +1,33 @@
+﻿@using Microsoft.AspNetCore.Components.Web
+@using TVWeb.Components
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+
+    @* 1. This is the auto-generated bundle for your project's CSS *@
+    <link rel="stylesheet" href="TVWeb.styles.css" />
+
+    @* 2. This ensures the error UI doesn't block your clicks while we debug *@
+    <style>
+        #blazor-error-ui { display: none !important; }
+    </style>
+
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+<body>
+    <Routes @rendermode="@(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))" />
+
+    @* The framework will look for this ID *@
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+
+    <script src="_framework/blazor.web.js"></script>
+</body>
+</html>

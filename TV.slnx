@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="TVStreamer/TVStreamer.csproj" />
+  <Project Path="TVWeb/TVWeb.csproj" Id="cde91fcc-5668-4ef9-97c1-b62ada442126" />
+</Solution>

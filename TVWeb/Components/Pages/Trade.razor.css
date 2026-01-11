@@ -1,0 +1,72 @@
+﻿
+.toolbar {
+    display: flex;
+    gap: .5rem;
+    align-items: center;
+    margin: .75rem 0 1rem;
+}
+
+.filter-input {
+    padding: .35rem .5rem;
+    min-width: 16rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.btn {
+    padding: .35rem .6rem;
+    border: 1px solid #888;
+    background: #f7f7f7;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+    .btn:hover {
+        background: #eee;
+    }
+
+.positions-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+    .positions-table th,
+    .positions-table td {
+        padding: .4rem .5rem;
+        border-bottom: 1px solid #e6e6e6;
+    }
+
+    .positions-table thead th {
+        text-align: left;
+        background: #fafafa;
+        border-bottom: 1px solid #ddd;
+    }
+
+.num {
+    text-align: right;
+}
+
+.profit {
+    background: #e9f7ef;
+}
+/* greenish */
+.loss {
+    background: #fdeaea;
+}
+/* reddish */
+.even {
+    background: #f9f9f9;
+}
+/* neutral */
+
+.pl {
+    font-weight: 600;
+}
+
+.summary {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: .75rem;
+    padding-top: .5rem;
+    border-top: 1px solid #ddd;
+}

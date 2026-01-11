@@ -1,0 +1,23 @@
+﻿@page "/ping"
+@using Microsoft.AspNetCore.Components.Web
+
+<h1>Ping</h1>
+<p>Count: @_count</p>
+<button class="btn btn-primary" @onclick="Increment">Click to increment</button>
+
+@code {
+    private int _count;
+
+    protected override void OnInitialized()
+    {
+        // This should show up in your Terminal/Output window
+        // every time you refresh the page.
+        Console.WriteLine("Ping component initialized!");
+    }
+
+    private void Increment()
+    {
+        Console.WriteLine("Button Clicked!");
+        _count++;
+    }
+}

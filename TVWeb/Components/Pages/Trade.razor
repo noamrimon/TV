@@ -1,0 +1,158 @@
+﻿@page "/trade"
+@using static Microsoft.AspNetCore.Components.Web.RenderMode
+@rendermode InteractiveServer
+
+@using TVWeb.Models
+@inject TVWeb.Services.PositionsStore Store
+
+<h1>Open Positions</h1>
+
+<div class="toolbar">
+    <input class="filter-input"
+           type="text"
+           placeholder="Filter by Epic…"
+           @bind="filterText"
+           @bind:event="oninput" />
+
+    <button class="btn" @onclick="SelectAllFiltered">Select all (filtered)</button>
+    <button class="btn" @onclick="ClearSelection">Clear selection</button>
+</div>
+
+@if (_positions is null)
+{
+    <p>Loading…</p>
+}
+else
+{
+    var displayed = GetDisplayedPositions();
+
+    <table class="positions-table">
+        <thead>
+            <tr>
+                <th style="width:2rem;"></th>
+                <th>Epic</th>
+                <th>Direction</th>
+                <th class="num">Size</th>
+                <th class="num">Open</th>
+                <th class="num">Bid</th>
+                <th class="num">Ask</th>
+                <th class="num">P/L</th>
+                <th class="num">Updated (UTC)</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in displayed)
+            {
+                var pl = ComputePl(p);
+                var rowClass = pl > 0m ? "profit" : pl < 0m ? "loss" : "even";
+                <tr class="@rowClass" @key="p.DealId">
+                    <td>
+                        <input type="checkbox"
+                               checked="@IsSelected(p.DealId)"
+                               @onchange="(e) => ToggleSelect(p.DealId, ((ChangeEventArgs)e).Value)" />
+                    </td>
+                    <td>@p.Epic</td>
+                    <td>@p.Direction</td>
+                    <td class="num">@p.Size</td>
+                    <td class="num">@Format(p.OpenLevel)</td>
+                    <td class="num">@Format(p.Bid)</td>
+                    <td class="num">@Format(p.Ask)</td>
+                    <td class="num pl">@Format(pl)</td>
+                    <td class="num">@p.LastUpdatedUtc?.ToString("HH:mm:ss")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="summary">
+        <div>
+            <strong>Selected:</strong> @selected.Count
+        </div>
+        <div>
+            <strong>Total P/L (selected):</strong> @Format(TotalSelectedPl())
+        </div>
+    </div>
+}
+
+@code {
+    private List<PositionSnapshot>? _positions;
+    private string filterText = string.Empty;
+    private HashSet<string> selected = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override void OnInitialized()
+    {
+        Store.PositionsChanged += OnPositionsChanged;
+        _positions = Store.GetAll().ToList();
+    }
+
+    private async void OnPositionsChanged(object? sender, EventArgs e)
+    {
+        _positions = Store.GetAll().ToList();
+        // preserve selection for existing deals
+        selected.IntersectWith(_positions.Select(p => p.DealId));
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => Store.PositionsChanged -= OnPositionsChanged;
+
+    // -- filtering & selection --
+    private IEnumerable<PositionSnapshot> GetDisplayedPositions()
+    {
+        if (_positions is null) return Array.Empty<PositionSnapshot>();
+        if (string.IsNullOrWhiteSpace(filterText))
+            return _positions.OrderBy(p => p.Epic);
+
+        return _positions
+            .Where(p => p.Epic.Contains(filterText, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(p => p.Epic);
+    }
+
+    private bool IsSelected(string dealId) => selected.Contains(dealId);
+
+    private void ToggleSelect(string dealId, object? value)
+    {
+        var isChecked = value is bool b && b;
+        if (isChecked) selected.Add(dealId);
+        else selected.Remove(dealId);
+    }
+
+    private void SelectAllFiltered()
+    {
+        foreach (var p in GetDisplayedPositions())
+            selected.Add(p.DealId);
+    }
+
+    private void ClearSelection() => selected.Clear();
+
+    // -- P/L calculation --
+    private decimal ComputePl(PositionSnapshot p)
+    {
+        if (!(p.OpenLevel is decimal open)) return 0m;
+
+        // IG directions are typically "BUY" or "SELL".
+        var dir = p.Direction?.Trim().ToUpperInvariant();
+
+        if (dir == "BUY")
+        {
+            // close a long at the current Bid
+            var current = p.Bid ?? p.Ask ?? open;
+            return (current - open) * p.Size;
+        }
+        else if (dir == "SELL")
+        {
+            // close a short at the current Ask
+            var current = p.Ask ?? p.Bid ?? open;
+            return (open - current) * p.Size;
+        }
+
+        return 0m;
+    }
+
+    private decimal TotalSelectedPl()
+        => (_positions ?? Enumerable.Empty<PositionSnapshot>())
+           .Where(p => selected.Contains(p.DealId))
+           .Sum(ComputePl);
+
+    private static string Format(decimal? value)
+        => value is decimal v ? v.ToString("0.#####") : "-";
+}
