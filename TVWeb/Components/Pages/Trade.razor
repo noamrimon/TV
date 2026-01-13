@@ -1,158 +1,150 @@
 ﻿@page "/trade"
 @using TVWeb.Models
 @using TVWeb.Services
-@using System.Linq
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Web
 @inject PositionsStore Store
 @implements IDisposable
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+
+<PageTitle>Trade Room</PageTitle>
 
 <style>
-    .trade-container {
-        padding: 20px;
-        font-family: sans-serif;
+    /* Direct styles to ensure they apply even if CSS isolation fails */
+    .price-pos {
+        color: #28a745 !important;
+        font-weight: bold;
     }
-
-    .trading-table {
-        width: 100%;
-        border-collapse: collapse;
-        background: #fff;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    /* Success Green */
+    .price-neg {
+        color: #dc3545 !important;
+        font-weight: bold;
     }
-
-        .trading-table th {
-            background: #333;
-            color: #fff;
-            padding: 12px;
-            text-align: left;
-        }
-
-        .trading-table td {
-            padding: 10px;
-            border-bottom: 1px solid #eee;
-        }
-
+    /* Danger Red */
     .mono {
-        font-family: 'Consolas', monospace;
-        text-align: right;
+        font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', monospace;
     }
 
-    .pos {
-        color: #27ae60;
-        font-weight: bold;
-    }
-
-    .neg {
-        color: #c0392b;
-        font-weight: bold;
-    }
-
-    .buy-badge {
-        background: #d4e6f1;
-        color: #1a5276;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 0.8em;
-    }
-
-    .sell-badge {
-        background: #fadbd8;
-        color: #7b241c;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 0.8em;
-    }
-
-    .total-footer {
-        background: #f4f4f4;
-        font-weight: bold;
-    }
-
-    .trading-table {
+    .trade-header {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
         border-radius: 8px;
-        overflow: hidden;
-        border: 1px solid #ccc;
+        padding: 20px;
+        margin-bottom: 20px;
     }
 
-        .trading-table th {
-            text-transform: uppercase;
-            font-size: 0.85rem;
-            letter-spacing: 1px;
-        }
-
-    .total-footer td {
-        padding: 15px 10px;
-        border-top: 2px solid #333;
-        font-size: 1.1rem;
-    }
-
-    .watch-cell {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-    }
-    /* Custom checkbox size */
-    input[type="checkbox"] {
-        transform: scale(1.5);
-        cursor: pointer;
+    .table-container {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        padding: 10px;
     }
 </style>
 
-<div class="trade-container">
-    <h3>Live Positions</h3>
-    <table class="trading-table">
-        <thead>
-            <tr>
-                <th>Symbol</th>
-                <th>Side</th>
-                <th class="mono">Bid</th>
-                <th class="mono">Ask</th>
-                <th class="mono">P/L</th>
-                <th style="text-align:center">Watch</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var pos in Store.GetPositions())
-            {
+<div class="container-fluid mt-3">
+    <div class="trade-header">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <h3 class="mb-0">Live Positions</h3>
+                <p class="text-muted mb-0">
+                    Total: @Store.GetPositions().Count() |
+                    Selected: <span class="badge bg-primary">@WatchedCount</span>
+                </p>
+            </div>
+            <div class="col-md-6 text-end">
+                <span class="text-muted small uppercase">Total P/L (USD)</span>
+                <h2 class="@(TotalPLUsd >= 0 ? "price-pos" : "price-neg")">
+                    @TotalPLUsd.ToString("C2", CultureInfo.GetCultureInfo("en-US"))
+                </h2>
+            </div>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="table table-hover">
+            <thead class="table-light">
                 <tr>
-                    <td>@pos.Symbol</td>
-                    <td><span class="@(pos.Type.Contains("BUY") ? "buy-badge" : "sell-badge")">@pos.Type</span></td>
-                    <td class="mono">@pos.Bid.ToString("N5")</td>
-                    <td class="mono">@pos.Ask.ToString("N5")</td>
-                    <td class="mono @(pos.ProfitLoss >= 0 ? "pos" : "neg")">
-                        @pos.ProfitLoss.ToString("N2")
-                    </td>
-                    <td style="text-align:center">
-                        <input type="checkbox" @bind="pos.IsWatched" @bind:event="onchange" />
-                    </td>
+                    <th>Symbol</th>
+                    <th>Type</th>
+                    <th class="text-end">Size</th>
+                    <th class="text-end">Open</th>
+                    <th class="text-end">Current (Bid/Ask)</th>
+                    <th class="text-end">P/L (Local)</th>
+                    <th class="text-center">Watch</th>
                 </tr>
-            }
-        </tbody>
-        <tfoot>
-            <tr class="total-footer">
-                <td colspan="4" style="text-align:right">Selected Total P/L:</td>
-                <td class="mono @(TotalPL >= 0 ? "pos" : "neg")">@TotalPL.ToString("N2")</td>
-                <td style="text-align:center">@WatchedCount</td>
-            </tr>
-        </tfoot>
-    </table>
+            </thead>
+            <tbody>
+                @foreach (var pos in Store.GetPositions())
+                {
+                    <tr>
+                        <td>
+                            <strong>@pos.Symbol</strong><br />
+                            <small class="text-muted" style="font-size: 0.75rem;">@pos.Id</small>
+                        </td>
+                        <td>
+                            <span class="badge @(pos.Type.Contains("BUY") ? "bg-outline-primary text-primary" : "bg-outline-danger text-danger")" style="border: 1px solid;">
+                                @pos.Type
+                            </span>
+                        </td>
+                        <td class="text-end mono">@pos.Size</td>
+                        <td class="text-end mono">@pos.OpenLevel.ToString("N2")</td>
+                        <td class="text-end mono">@pos.Bid.ToString("N2") / @pos.Ask.ToString("N2")</td>
+                        <td class="text-end mono @(pos.ProfitLoss >= 0 ? "price-pos" : "price-neg")">
+                            @pos.ProfitLoss.ToString("N2")
+                        </td>
+                        <td class="text-center">
+                            <input type="checkbox" @bind="pos.IsWatched" style="width: 20px; height: 20px; cursor: pointer;" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
 </div>
 
 @code {
     private readonly PeriodicTimer _timer = new(TimeSpan.FromMilliseconds(500));
     private readonly CancellationTokenSource _cts = new();
 
-    private decimal TotalPL => Store.GetPositions().Where(p => p.IsWatched).Sum(p => p.ProfitLoss);
+    private static readonly Dictionary<string, decimal> FX_RATES = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "USD", 1.0m }, { "GBP", 1.28m }, { "EUR", 1.09m }, { "JPY", 0.0065m }
+    };
+
+    private decimal TotalPLUsd => Store.GetPositions()
+        .Where(p => p.IsWatched)
+        .Sum(p => p.ProfitLoss * FX_RATES.GetValueOrDefault(p.Currency ?? "USD", 1.0m));
+
     private int WatchedCount => Store.GetPositions().Count(p => p.IsWatched);
 
-    protected override void OnInitialized() => _ = RefreshLoop();
+    protected override void OnInitialized()
+    {
+        _ = RefreshLoop();
+    }
 
     private async Task RefreshLoop()
     {
         try
         {
-            while (await _timer.WaitForNextTickAsync(_cts.Token)) await InvokeAsync(StateHasChanged);
+            while (await _timer.WaitForNextTickAsync(_cts.Token))
+            {
+                if (!_cts.IsCancellationRequested)
+                {
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) { /* Normal shutdown */ }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"UI Update Error: {ex.Message}");
+        }
     }
 
-    public void Dispose() { _cts.Cancel(); _cts.Dispose(); _timer.Dispose(); }
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        _timer.Dispose();
+    }
 }

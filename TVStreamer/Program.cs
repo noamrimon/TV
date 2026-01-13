@@ -103,7 +103,8 @@ internal class Program
             openLevel = p.OpenLevel,
             bid = (decimal?)null,
             ask = (decimal?)null,
-            valuePerPoint = valuePerPointByEpic.TryGetValue(p.Epic, out var vpp) ? vpp : 1m
+            valuePerPoint = valuePerPointByEpic.TryGetValue(p.Epic, out var vpp) ? vpp : 1m,
+            currency = p.Currency // Ensure this is passed to TVWeb
         });
 
         // Post to single ingest endpoint
