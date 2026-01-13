@@ -8,11 +8,18 @@ using TVWeb.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Make sure port matches TVStreamer config
+// Keep your configured URL for the streamer
 builder.WebHost.UseUrls("https://localhost:7199");
 
-builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+// Razor components + interactive server (IMPORTANT: chain off AddRazorComponents)
+builder.Services
+    .AddRazorComponents()
+    .AddInteractiveServerComponents();
+
+// MVC controllers for your ingest endpoints
 builder.Services.AddControllers();
+
+// Position store (singleton)
 builder.Services.AddSingleton<PositionsStore>();
 
 var app = builder.Build();
@@ -23,6 +30,7 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAntiforgery();
 
+// ---- Ingest endpoint (unchanged) ----
 var ingestKey = app.Configuration["WebIngest:IngestKey"] ?? string.Empty;
 var positionsStore = app.Services.GetRequiredService<PositionsStore>();
 
@@ -30,8 +38,9 @@ app.MapPost("/api/stream/positions", async (HttpContext http) =>
 {
     try
     {
-        if (!http.Request.Headers.TryGetValue("X-INGEST-KEY", out var keys) ||
-            keys.Count == 0 || !CryptographicEquals(keys[0], ingestKey))
+        if (!http.Request.Headers.TryGetValue("X-INGEST-KEY", out var keys)
+            || keys.Count == 0
+            || !CryptographicEquals(keys[0], ingestKey))
             return Results.StatusCode((int)HttpStatusCode.Forbidden);
 
         string body;
@@ -42,7 +51,6 @@ app.MapPost("/api/stream/positions", async (HttpContext http) =>
             return Results.BadRequest("Empty body");
 
         var trimmed = body.TrimStart();
-
         if (trimmed.StartsWith("["))
         {
             using var doc = JsonDocument.Parse(body);
@@ -131,9 +139,9 @@ app.MapPost("/api/stream/positions", async (HttpContext http) =>
 });
 
 app.MapGet("/healthz", () => Results.Ok(new { ok = true }));
-
 app.MapControllers();
 
+// ---- Razor Components host + Interactive Server render mode ----
 app.MapRazorComponents<TVWeb.Components.App>()
    .AddInteractiveServerRenderMode();
 

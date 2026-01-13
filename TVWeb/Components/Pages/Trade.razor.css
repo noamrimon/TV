@@ -1,76 +1,23 @@
-﻿
-.toolbar {
-    display: flex;
-    gap: .5rem;
-    align-items: center;
-    margin: .75rem 0 1rem;
+﻿.text-success {
+    color: #28a745 !important;
 }
 
-.filter-input {
-    padding: .35rem .5rem;
-    min-width: 16rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+.text-danger {
+    color: #dc3545 !important;
 }
 
-.btn {
-    padding: .35rem .6rem;
-    border: 1px solid #888;
-    background: #f7f7f7;
-    border-radius: 4px;
-    cursor: pointer;
+.text-success-light {
+    color: #2ecc71 !important;
 }
 
-    .btn:hover {
-        background: #eee;
-    }
-
-.positions-table {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
+.text-danger-light {
+    color: #ff7675 !important;
 }
 
-    .positions-table th,
-    .positions-table td {
-        padding: .4rem .5rem;
-        border-bottom: 1px solid #e6e6e6;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .positions-table thead th {
-        text-align: left;
-        background: #fafafa;
-        border-bottom: 1px solid #ddd;
-    }
-
-.num {
-    text-align: right;
+.font-monospace {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 
-.profit {
-    background: #e9f7ef;
-}
-/* greenish */
-.loss {
-    background: #fdeaea;
-}
-/* reddish */
-.even {
-    background: #f9f9f9;
-}
-/* neutral */
-
-.pl {
-    font-weight: 600;
-}
-
-.summary {
-    display: flex;
-    gap: 1.5rem;
-    margin-top: .75rem;
-    padding-top: .5rem;
-    border-top: 1px solid #ddd;
+.table-hover tbody tr:hover {
+    background-color: rgba(0,0,0,.03);
 }
