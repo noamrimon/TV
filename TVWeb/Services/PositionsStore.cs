@@ -26,12 +26,15 @@ public class PositionsStore
                     Currency = s.Currency ?? "USD"
                 },
                 (key, existing) => {
-                    // Update only data fields, preserving UI state (IsWatched)
-                    if (s.Bid.HasValue) existing.Bid = s.Bid.Value;
-                    if (s.Ask.HasValue) existing.Ask = s.Ask.Value;
-                    if (s.OpenLevel.HasValue) existing.OpenLevel = s.OpenLevel.Value;
+                    existing.Bid = s.Bid ?? existing.Bid;
+                    existing.Ask = s.Ask ?? existing.Ask;
+                    existing.OpenLevel = s.OpenLevel ?? existing.OpenLevel;
                     existing.Size = s.Size;
-                    if (s.ValuePerPoint.HasValue) existing.ValuePerPoint = s.ValuePerPoint.Value;
+                    existing.ValuePerPoint = s.ValuePerPoint ?? existing.ValuePerPoint;
+
+                    // Ensure we don't lose the currency if it's sent in a refresh
+                    if (!string.IsNullOrEmpty(s.Currency)) existing.Currency = s.Currency;
+
                     return existing;
                 });
         }

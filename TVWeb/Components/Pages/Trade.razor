@@ -10,19 +10,18 @@
 <PageTitle>Trade Room</PageTitle>
 
 <style>
-    /* Direct styles to ensure they apply even if CSS isolation fails */
     .price-pos {
         color: #28a745 !important;
         font-weight: bold;
     }
-    /* Success Green */
+
     .price-neg {
         color: #dc3545 !important;
         font-weight: bold;
     }
-    /* Danger Red */
+
     .mono {
-        font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', monospace;
+        font-family: ui-monospace, 'Cascadia Code', monospace;
     }
 
     .trade-header {
@@ -38,6 +37,11 @@
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         padding: 10px;
+    }
+
+    .symbol-small {
+        font-size: 0.75rem;
+        color: #6c757d;
     }
 </style>
 
@@ -79,7 +83,7 @@
                     <tr>
                         <td>
                             <strong>@pos.Symbol</strong><br />
-                            <small class="text-muted" style="font-size: 0.75rem;">@pos.Id</small>
+                            <small class="symbol-small">@pos.Id</small>
                         </td>
                         <td>
                             <span class="badge @(pos.Type.Contains("BUY") ? "bg-outline-primary text-primary" : "bg-outline-danger text-danger")" style="border: 1px solid;">
@@ -87,10 +91,10 @@
                             </span>
                         </td>
                         <td class="text-end mono">@pos.Size</td>
-                        <td class="text-end mono">@pos.OpenLevel.ToString("N2")</td>
-                        <td class="text-end mono">@pos.Bid.ToString("N2") / @pos.Ask.ToString("N2")</td>
+                        <td class="text-end mono">@FormatPrice(pos.OpenLevel)</td>
+                        <td class="text-end mono">@FormatPrice(pos.Bid) / @FormatPrice(pos.Ask)</td>
                         <td class="text-end mono @(pos.ProfitLoss >= 0 ? "price-pos" : "price-neg")">
-                            @pos.ProfitLoss.ToString("N2")
+                            @FormatLocalPL(pos)
                         </td>
                         <td class="text-center">
                             <input type="checkbox" @bind="pos.IsWatched" style="width: 20px; height: 20px; cursor: pointer;" />
@@ -111,16 +115,39 @@
         { "USD", 1.0m }, { "GBP", 1.28m }, { "EUR", 1.09m }, { "JPY", 0.0065m }
     };
 
+    private string FormatLocalPL(decimal pl, string currency)
+    {
+        var culture = CURRENCY_CULTURES.GetValueOrDefault(currency, CultureInfo.InvariantCulture);
+        // "C2" handles the symbol placement (e.g., -$250 or -JP¥250)
+        return pl.ToString("C2", culture);
+    }
+
+    private string FormatPrice(decimal price)
+    {
+        // If the number is large (like an Index price 11637.6), format without thousands separator
+        // and show 1 decimal place. Otherwise, show 4 or 5 for FX.
+        if (price > 1000)
+        {
+            return price.ToString("F1", CultureInfo.InvariantCulture);
+        }
+        return price.ToString("N5", CultureInfo.InvariantCulture).TrimEnd('0').TrimEnd('.');
+    }
+
     private decimal TotalPLUsd => Store.GetPositions()
         .Where(p => p.IsWatched)
-        .Sum(p => p.ProfitLoss * FX_RATES.GetValueOrDefault(p.Currency ?? "USD", 1.0m));
+        .Sum(p =>
+        {
+            string ccy = "USD";
+            if (p.Symbol.Contains("JPY")) ccy = "JPY";
+            else if (p.Symbol.Contains("EURUSD")) ccy = "USD"; // EURUSD pays in USD
+            else if (p.Symbol.Contains("EUR.IP")) ccy = "EUR";
+
+            return p.ProfitLoss * FX_RATES.GetValueOrDefault(ccy, 1.0m);
+        });
 
     private int WatchedCount => Store.GetPositions().Count(p => p.IsWatched);
 
-    protected override void OnInitialized()
-    {
-        _ = RefreshLoop();
-    }
+    protected override void OnInitialized() => _ = RefreshLoop();
 
     private async Task RefreshLoop()
     {
@@ -128,23 +155,41 @@
         {
             while (await _timer.WaitForNextTickAsync(_cts.Token))
             {
-                if (!_cts.IsCancellationRequested)
-                {
-                    await InvokeAsync(StateHasChanged);
-                }
+                if (!_cts.IsCancellationRequested) await InvokeAsync(StateHasChanged);
             }
         }
-        catch (OperationCanceledException) { /* Normal shutdown */ }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"UI Update Error: {ex.Message}");
-        }
+        catch { }
     }
 
-    public void Dispose()
+    public void Dispose() { _cts.Cancel(); _cts.Dispose(); _timer.Dispose(); }
+    private static readonly Dictionary<string, CultureInfo> CURRENCY_CULTURES = new(StringComparer.OrdinalIgnoreCase)
     {
-        _cts.Cancel();
-        _cts.Dispose();
-        _timer.Dispose();
+        { "USD", CultureInfo.GetCultureInfo("en-US") },
+        { "GBP", CultureInfo.GetCultureInfo("en-GB") },
+        { "EUR", CultureInfo.GetCultureInfo("fr-FR") }, // Displays €
+        { "JPY", CultureInfo.GetCultureInfo("ja-JP") }  // Displays ¥
+    };
+
+    private string FormatLocalPL(PositionModel pos)
+    {
+        // 1. Correct Currency Detection for FX Pairs
+        string ccy = "USD"; // Default
+        string s = pos.Symbol.ToUpper();
+
+        // Look for the "Quote" currency (the second one)
+        if (s.Contains("JPY")) ccy = "JPY";
+        else if (s.Contains("EURUSD") || s.EndsWith("USD.IP")) ccy = "USD";
+        else if (s.Contains("GBPEUR") || s.EndsWith("EUR.IP")) ccy = "EUR";
+        else if (s.Contains("EURGBP") || s.EndsWith("GBP.IP")) ccy = "GBP";
+
+        var culture = CURRENCY_CULTURES.GetValueOrDefault(ccy, CultureInfo.GetCultureInfo("en-US"));
+
+        if (ccy == "JPY")
+        {
+            string sign = pos.ProfitLoss < 0 ? "-" : "";
+            return $"{sign}JP¥{Math.Abs(pos.ProfitLoss):N0}";
+        }
+
+        return pos.ProfitLoss.ToString("C2", culture);
     }
 }

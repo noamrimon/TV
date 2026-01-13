@@ -27,15 +27,37 @@ public class PositionModel
         get
         {
             if (OpenLevel <= 0 || (Bid <= 0 && Ask <= 0)) return 0;
+
             bool isBuy = Type.Contains("BUY", StringComparison.OrdinalIgnoreCase);
             decimal currentPrice = isBuy ? Bid : Ask;
-            if (currentPrice <= 0) return 0;
 
+            // 1. Calculate raw difference (e.g., -0.00033)
             decimal diff = isBuy ? (currentPrice - OpenLevel) : (OpenLevel - currentPrice);
-            decimal multiplier = ValuePerPoint;
-            if (multiplier >= 10000 && currentPrice > 100) multiplier /= 10000;
 
-            return Math.Round(diff * Size * multiplier, 2);
+            decimal multiplier = 1.0m;
+            string s = Symbol.ToUpper();
+
+            // 2. Determine Multiplier
+            if (currentPrice >= 1000)
+            {
+                multiplier = 0.0001m; // For EURUSD at 11637
+            }
+            else if (s.Contains("JPY"))
+            {
+                // If your JPY is working with 1.0, keep it. 
+                // If JPY becomes 0, this needs to be 1.0.
+                multiplier = 1.0m;
+            }
+            else
+            {
+                // For ALL standard FX (AUDUSD, USDCAD, GBPUSD)
+                multiplier = 1.0m;
+            }
+
+            // 3. CRITICAL: Multiply everything FIRST, then round at the very end.
+            decimal total = diff * multiplier * Size * ValuePerPoint;
+
+            return Math.Round(total, 2);
         }
     }
 }
