@@ -43,61 +43,222 @@
         font-size: 0.75rem;
         color: #6c757d;
     }
+    /* Terminal Dashboard Feel */
+    .table-dark-custom {
+        background: #1a1d21;
+        color: #e0e0e0;
+        border-collapse: separate;
+        border-spacing: 0 4px; /* Creates a "row" effect */
+    }
+
+        .table-dark-custom thead th {
+            background: #23272e;
+            color: #8a9199;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border: none;
+            padding: 15px;
+        }
+
+        .table-dark-custom tbody tr {
+            background: #1e2227;
+            border-bottom: 1px solid #2c313a;
+        }
+
+            .table-dark-custom tbody tr:hover {
+                background: #2c313a !important;
+                cursor: default;
+            }
+
+    /* Larger Text & Typography */
+    .fs-4 {
+        font-size: 1.5rem !important;
+    }
+
+    .fs-5 {
+        font-size: 1.15rem !important;
+    }
+
+    .x-small {
+        font-size: 0.7rem;
+    }
+
+    .mono {
+        font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+    }
+
+    /* Colors */
+    .text-profit {
+        color: #2ecc71;
+        text-shadow: none;
+        font-weight: 600;
+    }
+
+    /* Professional Muted Red */
+    .text-loss {
+        color: #e74c3c;
+        text-shadow: none;
+        font-weight: 600;
+    }
+
+    /* Custom Badge UI */
+    .badge-custom {
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 0.75rem;
+    }
+
+    .side-buy {
+        background: rgba(0, 255, 136, 0.1);
+        color: #00ff88;
+        border: 1px solid #00ff88;
+    }
+
+    .side-sell {
+        background: rgba(255, 77, 77, 0.1);
+        color: #ff4d4d;
+        border: 1px solid #ff4d4d;
+    }
+
+    .trade-check {
+        width: 22px;
+        height: 22px;
+        accent-color: #3498db;
+    }
+
+    .terminal-input {
+        background: #1a1d21;
+        border: 1px solid #3e4451;
+        color: white;
+    }
+
+        .terminal-input:focus {
+            background: #23272e;
+            color: white;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        }
+
+    .bg-dark-header {
+        background: #23272e;
+        border-radius: 8px;
+        border: 1px solid #3e4451;
+    }
+
+    .trade-check-sm {
+        width: 16px;
+        height: 16px;
+        margin-top: 4px;
+        cursor: pointer;
+    }
+
+    /* Ensure captions are clean */
+    thead th {
+        vertical-align: top;
+        line-height: 1.2;
+    }
+
+    .account-filters .btn.active {
+        background-color: #0d6efd;
+        border-color: #0d6efd;
+        color: white;
+    }
 </style>
 
 <div class="container-fluid mt-3">
-    <div class="trade-header">
+    <div class="trade-header shadow-sm mb-3">
         <div class="row align-items-center">
             <div class="col-md-6">
                 <h3 class="mb-0">Live Positions</h3>
-                <p class="text-muted mb-0">
-                    Total: @Store.GetPositions().Count() |
-                    Selected: <span class="badge bg-primary">@WatchedCount</span>
-                </p>
+                <p class="text-muted mb-0">Total: @Store.GetPositions().Count()</p>
             </div>
             <div class="col-md-6 text-end">
-                <span class="text-muted small uppercase">Total P/L (USD)</span>
-                <h2 class="@(TotalPLUsd >= 0 ? "price-pos" : "price-neg")">
+                <span class="text-muted small text-uppercase">Total Select P/L (USD)</span>
+                <h2 class="@(TotalPLUsd >= 0 ? "text-profit" : "text-loss") mb-0">
                     @TotalPLUsd.ToString("C2", CultureInfo.GetCultureInfo("en-US"))
                 </h2>
             </div>
         </div>
     </div>
 
-    <div class="table-container">
-        <table class="table table-hover">
-            <thead class="table-light">
+    <div class="filter-dashboard mb-3 p-3 shadow-sm bg-dark-header">
+        <div class="d-flex justify-content-between align-items-end">
+            <div class="account-filters">
+                <span class="text-uppercase fw-bold x-small text-muted d-block mb-1">Accounts</span>
+                <div class="btn-group shadow-sm">
+                    <button class="btn btn-dark btn-sm border-secondary active">Main Account</button>
+                </div>
+            </div>
+
+            <div class="search-box mx-4" style="flex-grow: 1; max-width: 400px;">
+                <label class="text-uppercase fw-bold x-small text-muted mb-1">Filter Accounts/Markets</label>
+                <input type="text" class="form-control form-control-sm terminal-input"
+                       placeholder="Type to filter..." @bind="_searchTerm" @bind:event="oninput" />
+            </div>
+
+            <div class="market-filters text-end">
+                <span class="text-uppercase fw-bold x-small text-muted d-block mb-1">Top Markets</span>
+                <div class="btn-group shadow-sm">
+                    <button class="btn btn-outline-secondary btn-sm" @onclick='() => _searchTerm = ""'>All</button>
+                    @foreach (var mkt in DynamicMarkets)
+                    {
+                        <button class="btn btn-outline-primary btn-sm @(_searchTerm == mkt ? "active" : "")"
+                                @onclick="() => _searchTerm = mkt">
+                            @mkt
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="trade-grid shadow-lg">
+        <table class="table table-dark-custom mb-0">
+            <thead>
                 <tr>
-                    <th>Symbol</th>
-                    <th>Type</th>
+                    <th>Market</th>
+                    <th>Direction</th>
                     <th class="text-end">Size</th>
-                    <th class="text-end">Open</th>
-                    <th class="text-end">Current (Bid/Ask)</th>
-                    <th class="text-end">P/L (Local)</th>
-                    <th class="text-center">Watch</th>
+                    <th class="text-end">Entry</th>
+                    <th class="text-end">Ask / Bid</th>
+                    <th class="text-end">Profit / Loss</th>
+                    <th class="text-center">
+                        Watch<br />
+                        <input type="checkbox" @bind="SelectAll" class="trade-check-sm" />
+                    </th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var pos in Store.GetPositions())
+                @foreach (var pos in FilteredPositions)
                 {
                     <tr>
-                        <td>
-                            <strong>@pos.Symbol</strong><br />
-                            <small class="symbol-small">@pos.Id</small>
+                        <td class="align-middle">
+                            <div class="fw-bold fs-5">@GetMarketDisplay(pos.Symbol)</div>
+                            <div class="text-muted x-small mono">@pos.Id</div>
                         </td>
-                        <td>
-                            <span class="badge @(pos.Type.Contains("BUY") ? "bg-outline-primary text-primary" : "bg-outline-danger text-danger")" style="border: 1px solid;">
+                        <td class="align-middle">
+                            <span class="badge-custom @(pos.Type.Contains("BUY") ? "side-buy" : "side-sell")">
                                 @pos.Type
                             </span>
                         </td>
-                        <td class="text-end mono">@pos.Size</td>
-                        <td class="text-end mono">@FormatPrice(pos.OpenLevel)</td>
-                        <td class="text-end mono">@FormatPrice(pos.Bid) / @FormatPrice(pos.Ask)</td>
-                        <td class="text-end mono @(pos.ProfitLoss >= 0 ? "price-pos" : "price-neg")">
-                            @FormatLocalPL(pos)
+                        <td class="text-end align-middle fs-5 mono">@pos.Size</td>
+                        <td class="text-end align-middle fs-6 mono">@FormatPrice(pos.OpenLevel)</td>
+                        <td class="text-end align-middle">
+                            <div class="mono fs-6">@FormatPrice(pos.Ask) / @FormatPrice(pos.Bid)</div>
+                            <div class="text-muted x-small">Spread: @Math.Abs(pos.Ask - pos.Bid).ToString("N1")</div>
                         </td>
-                        <td class="text-center">
-                            <input type="checkbox" @bind="pos.IsWatched" style="width: 20px; height: 20px; cursor: pointer;" />
+                        <td class="text-end align-middle">
+                            <div class="fw-bold fs-4 @(CalculatePL(pos) >= 0 ? "text-profit" : "text-loss")">
+                                @{
+                                    var ccy = GetQuoteCurrency(pos.Symbol);
+                                    var culture = CURRENCY_CULTURES.GetValueOrDefault(ccy, CultureInfo.GetCultureInfo("en-US"));
+                                    @CalculatePL(pos).ToString("C2", culture)
+                                }
+                            </div>
+                        </td>
+                        <td class="text-center align-middle">
+                            <input type="checkbox" @bind="pos.IsWatched" class="trade-check" />
                         </td>
                     </tr>
                 }
@@ -109,6 +270,43 @@
 @code {
     private readonly PeriodicTimer _timer = new(TimeSpan.FromMilliseconds(500));
     private readonly CancellationTokenSource _cts = new();
+    private string _searchTerm = "";
+
+
+    // Helper to extract a readable Market name from an IG Epic
+    private string GetMarketDisplay(string epic)
+    {
+        var parts = epic.Split('.');
+        if (parts.Length >= 3)
+        {
+            var pair = parts[2]; // Usually "EURUSD" or "USDJPY"
+            if (pair.Length == 6 && !pair.Contains("100")) // standard FX
+                return $"{pair.Substring(0, 3)}/{pair.Substring(3, 3)}";
+            return pair; // Indices or Commodities
+        }
+        return epic;
+    }
+    // Logic for Select All
+    private bool SelectAll
+    {
+        get => FilteredPositions.Any() && FilteredPositions.All(p => p.IsWatched);
+        set { foreach (var p in FilteredPositions) p.IsWatched = value; }
+    }
+    // Get the top 10 unique markets (based on the first 3-6 letters of the Epic)
+    private IEnumerable<string> DynamicMarkets => Store.GetPositions()
+        .Select(p => GetMarketDisplay(p.Symbol))
+        .Distinct()
+        .Take(10);
+
+    // Get unique accounts (assuming you have an AccountId or similar)
+    private IEnumerable<string> DynamicAccounts => Store.GetPositions()
+        .Select(p => p.Currency) // Or use a 'AccountId' property if available
+        .Distinct();
+
+    private IEnumerable<PositionModel> FilteredPositions => Store.GetPositions()
+        .Where(p => string.IsNullOrWhiteSpace(_searchTerm)
+                 || p.Symbol.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase)
+                 || GetMarketDisplay(p.Symbol).Contains(_searchTerm, StringComparison.OrdinalIgnoreCase));
 
     private static readonly Dictionary<string, decimal> FX_RATES = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -134,16 +332,13 @@
     }
 
     private decimal TotalPLUsd => Store.GetPositions()
-        .Where(p => p.IsWatched)
-        .Sum(p =>
-        {
-            string ccy = "USD";
-            if (p.Symbol.Contains("JPY")) ccy = "JPY";
-            else if (p.Symbol.Contains("EURUSD")) ccy = "USD"; // EURUSD pays in USD
-            else if (p.Symbol.Contains("EUR.IP")) ccy = "EUR";
-
-            return p.ProfitLoss * FX_RATES.GetValueOrDefault(ccy, 1.0m);
-        });
+            .Where(p => p.IsWatched)
+            .Sum(p =>
+            {
+                decimal localPl = CalculatePL(p);
+                string ccy = GetQuoteCurrency(p.Symbol);
+                return localPl * FX_RATES.GetValueOrDefault(ccy, 1.0m);
+            });
 
     private int WatchedCount => Store.GetPositions().Count(p => p.IsWatched);
 
@@ -191,5 +386,49 @@
         }
 
         return pos.ProfitLoss.ToString("C2", culture);
+    }
+    // 1. Detect Quote Currency (e.g., EURUSD -> USD, USDJPY -> JPY)
+    private string GetQuoteCurrency(string symbol)
+    {
+        var parts = symbol.ToUpper().Split('.');
+        if (parts.Length < 3) return "USD";
+        var epic = parts[2];
+
+        if (epic.Contains("JPY")) return "JPY";
+        if (epic.Contains("GBP")) return "GBP";
+        if (epic.Contains("EUR")) return "EUR";
+        if (epic.Contains("SGD")) return "SGD";
+        if (epic.EndsWith("USD")) return "USD";
+
+        return "USD"; // Default
+    }
+    public decimal CalculatePL(PositionModel pos)
+    {
+        if (pos.OpenLevel <= 0 || (pos.Bid <= 0 && pos.Ask <= 0)) return 0;
+
+        bool isBuy = pos.Type.Contains("BUY", StringComparison.OrdinalIgnoreCase);
+        decimal currentPrice = isBuy ? pos.Bid : pos.Ask;
+        decimal diff = isBuy ? (currentPrice - pos.OpenLevel) : (pos.OpenLevel - currentPrice);
+
+        decimal multiplier = 1.0m;
+        string quoteCcy = GetQuoteCurrency(pos.Symbol);
+
+        if (currentPrice >= 1000)
+        {
+            // Case: EURUSD at 11654
+            multiplier = 0.0001m;
+        }
+        else if (quoteCcy == "JPY")
+        {
+            // Case: USDJPY at 158.598. Diff is -0.004.
+            // If we want points, 1 point = 0.01. So multiplier = 100.
+            // But if your VPP is high, keep it 1.0.
+            // Let's use 1.0 to stay consistent with your working JPY.
+            multiplier = 1.0m;
+        }
+
+        // CRITICAL: No rounding until the very end
+        decimal rawPl = diff * multiplier * pos.Size * pos.ValuePerPoint;
+        return Math.Round(rawPl, 2);
     }
 }
