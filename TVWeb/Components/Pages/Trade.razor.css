@@ -21,3 +21,157 @@
 .table-hover tbody tr:hover {
     background-color: rgba(0,0,0,.03);
 }
+.price-pos {
+    color: #28a745 !important;
+    font-weight: bold;
+}
+
+.price-neg {
+    color: #dc3545 !important;
+    font-weight: bold;
+}
+
+.mono {
+    font-family: ui-monospace, 'Cascadia Code', monospace;
+}
+
+.trade-header {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.table-container {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    padding: 10px;
+}
+
+.symbol-small {
+    font-size: 0.75rem;
+    color: #6c757d;
+}
+/* Terminal Dashboard Feel */
+.table-dark-custom {
+    background: #1a1d21;
+    color: #e0e0e0;
+    border-collapse: separate;
+    border-spacing: 0 4px; /* Creates a "row" effect */
+}
+
+    .table-dark-custom thead th {
+        background: #23272e;
+        color: #8a9199;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        border: none;
+        padding: 15px;
+    }
+
+    .table-dark-custom tbody tr {
+        background: #1e2227;
+        border-bottom: 1px solid #2c313a;
+    }
+
+        .table-dark-custom tbody tr:hover {
+            background: #2c313a !important;
+            cursor: default;
+        }
+
+/* Larger Text & Typography */
+.fs-4 {
+    font-size: 1.5rem !important;
+}
+
+.fs-5 {
+    font-size: 1.15rem !important;
+}
+
+.x-small {
+    font-size: 0.7rem;
+}
+
+.mono {
+    font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+}
+
+/* Colors */
+.text-profit {
+    color: #2ecc71;
+    text-shadow: none;
+    font-weight: 600;
+}
+
+/* Professional Muted Red */
+.text-loss {
+    color: #e74c3c;
+    text-shadow: none;
+    font-weight: 600;
+}
+
+/* Custom Badge UI */
+.badge-custom {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 0.75rem;
+}
+
+.side-buy {
+    background: rgba(0, 255, 136, 0.1);
+    color: #00ff88;
+    border: 1px solid #00ff88;
+}
+
+.side-sell {
+    background: rgba(255, 77, 77, 0.1);
+    color: #ff4d4d;
+    border: 1px solid #ff4d4d;
+}
+
+.trade-check {
+    width: 22px;
+    height: 22px;
+    accent-color: #3498db;
+}
+
+.terminal-input {
+    background: #1a1d21;
+    border: 1px solid #3e4451;
+    color: white;
+}
+
+    .terminal-input:focus {
+        background: #23272e;
+        color: white;
+        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+    }
+
+.bg-dark-header {
+    background: #23272e;
+    border-radius: 8px;
+    border: 1px solid #3e4451;
+}
+
+.trade-check-sm {
+    width: 16px;
+    height: 16px;
+    margin-top: 4px;
+    cursor: pointer;
+}
+
+/* Ensure captions are clean */
+thead th {
+    vertical-align: top;
+    line-height: 1.2;
+}
+
+.account-filters .btn.active {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: white;
+}
