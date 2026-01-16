@@ -1,14 +1,162 @@
 using System.Globalization;
 using TVWeb.Models;
+using TVWeb.Services;
+
+
 
 namespace TVWeb.Components.Pages
 {
+    public class FrankfurterResponse { public Dictionary<string, decimal> Rates { get; set; } = new(); }
     public partial class Trade
     {
         private readonly PeriodicTimer _timer = new(TimeSpan.FromMilliseconds(500));
         private readonly CancellationTokenSource _cts = new();
         private string _searchTerm = "";
+        private Dictionary<string, decimal> _usdRates = new();
+        private bool _isRateLoading = false;
 
+        private static readonly Dictionary<string, string> _currencySymbols = new();
+
+        protected override async Task OnInitializedAsync()
+        {
+            await LoadRates();
+            // Your existing streaming/data logic...
+        }
+
+        private async Task LoadRates()
+        {
+            if (_usdRates.Any()) return;
+            _isRateLoading = true;
+            try
+            {
+                using var http = new HttpClient();
+                // Frankfurter is free, no key needed. 
+                // base=USD gets rates relative to 1 US Dollar.
+                var data = await http.GetFromJsonAsync<FrankfurterResponse>("https://api.frankfurter.dev/v1/latest?base=USD");
+                if (data?.Rates != null)
+                {
+                    _usdRates = data.Rates;
+                    _usdRates["USD"] = 1.0m;
+                }
+            }
+            catch { /* Log error or use hardcoded fallbacks */ }
+            finally { _isRateLoading = false; }
+        }
+        public decimal GetTotalSelectedUsd(IEnumerable<PositionModel> selectedPositions)
+        {
+            decimal totalUsd = 0;
+
+            foreach (var pos in selectedPositions)
+            {
+                string iso = ExtractTermCurrency(pos.Symbol);
+                decimal pl = pos.ProfitLoss;
+
+                if (iso == "USD")
+                {
+                    totalUsd += pl;
+                }
+                else if (_usdRates.TryGetValue(iso, out var rate) && rate != 0)
+                {
+                    decimal converted = pl / rate;
+                    totalUsd += converted;
+
+                    // Debugging: Check your F12 console to see if the math looks right
+                    Console.WriteLine($"Converting {pl} {iso} to USD using rate {rate}. Result: {converted}");
+                }
+                else
+                {
+                    // If the rate isn't loaded yet, we add it as-is (fallback)
+                    totalUsd += pl;
+                    Console.WriteLine($"Warning: No rate found for {iso}. Adding raw value.");
+                }
+            }
+
+            return Math.Round(totalUsd, 2);
+        }
+        private string GetFormattedPL(PositionModel pos)
+        {
+            string iso = ExtractTermCurrency(pos.Symbol);
+            decimal val = pos.ProfitLoss;
+
+            // 1. Get the culture based on the ISO code
+            var culture = GetCultureFromIso(iso);
+
+            // 2. Format the number using the culture's rules (decimals, sign placement)
+            string formatted = val.ToString("C", culture);
+
+            // 3. APPLY OVERRIDES: Fix the generic '$' for specific dollar-based currencies
+            return iso switch
+            {
+                "CAD" => formatted.Replace("$", "CA$"),
+                "SGD" => formatted.Replace("$", "SGD "),
+                "AUD" => formatted.Replace("$", "A$"),
+                "NZD" => formatted.Replace("$", "NZ$"),
+                "HKD" => formatted.Replace("$", "HK$"),
+                _ => formatted // USD, GBP, EUR, JPY etc. will use their native symbols
+            };
+        }
+        private CultureInfo GetCultureFromIso(string isoCode)
+        {
+            try
+            {
+                // Find the first culture that uses this ISO currency code
+                var culture = CultureInfo.GetCultures(CultureTypes.SpecificCultures)
+                    .Select(c => new { Culture = c, Region = new RegionInfo(c.Name) })
+                    .FirstOrDefault(x => x.Region.ISOCurrencySymbol == isoCode)
+                    ?.Culture;
+
+                return culture ?? CultureInfo.CurrentCulture;
+            }
+            catch
+            {
+                return CultureInfo.CurrentCulture;
+            }
+        }
+        private string ExtractTermCurrency(string symbol)
+        {
+            if (string.IsNullOrWhiteSpace(symbol)) return "USD";
+
+            // 1. Split by dots to handle "CS.D.USDSGD.MINI.IP"
+            var parts = symbol.Split('.');
+            foreach (var part in parts)
+            {
+                // The currency pair is always the 6-letter part
+                if (part.Length == 6 && part.All(char.IsLetter))
+                {
+                    // SKIP the first 3 (Base) and TAKE the last 3 (Term/Profit Currency)
+                    return part.Substring(3, 3).ToUpper();
+                }
+            }
+
+            // 2. Handle "USD/SGD" format
+            if (symbol.Contains('/'))
+            {
+                return symbol.Split('/').Last().Trim().ToUpper();
+            }
+
+            // 3. Handle raw "USDSGD"
+            if (symbol.Length == 6)
+            {
+                return symbol.Substring(3, 3).ToUpper();
+            }
+
+            return "USD";
+        }
+
+        private string GetSymbolFromIsoCode(string isoCode)
+        {
+            try
+            {
+                return CultureInfo.GetCultures(CultureTypes.SpecificCultures)
+                    .Select(c => new RegionInfo(c.Name))
+                    .FirstOrDefault(r => r.ISOCurrencySymbol == isoCode)
+                    ?.CurrencySymbol ?? isoCode;
+            }
+            catch
+            {
+                return isoCode;
+            }
+        }
 
         // Helper to extract a readable Market name from an IG Epic
         private string GetMarketDisplay(string epic)
@@ -68,14 +216,44 @@ namespace TVWeb.Components.Pages
             return price.ToString("N5", CultureInfo.InvariantCulture).TrimEnd('0').TrimEnd('.');
         }
 
-        private decimal TotalPLUsd => Store.GetPositions()
-                .Where(p => p.IsWatched)
-                .Sum(p =>
+        private decimal TotalPLUsd
+        {
+            get
+            {
+                // Use 'Store' here as defined in your @inject Store
+                if (Store?.Positions == null) return 0;
+
+                var allPositions = Store.Positions.Values;
+
+                // Filter for positions that are selected/watched
+                var selected = allPositions.Where(p => p.IsWatched).ToList();
+
+                if (!selected.Any()) return 0;
+
+                decimal total = 0;
+                foreach (var pos in selected)
                 {
-                    decimal localPl = CalculatePL(p);
-                    string ccy = GetQuoteCurrency(p.Symbol);
-                    return localPl * FX_RATES.GetValueOrDefault(ccy, 1.0m);
-                });
+                    // Extract the Term currency (e.g., "SGD" or "CAD")
+                    string iso = ExtractTermCurrency(pos.Symbol);
+
+                    if (iso == "USD")
+                    {
+                        total += pos.ProfitLoss;
+                    }
+                    else if (_usdRates.TryGetValue(iso, out var rate) && rate != 0)
+                    {
+                        // Divide the Term P/L by the USD rate (e.g., 11.00 SGD / 1.34)
+                        total += pos.ProfitLoss / rate;
+                    }
+                    else
+                    {
+                        // Fallback if Frankfurter rates haven't loaded yet
+                        total += pos.ProfitLoss;
+                    }
+                }
+                return Math.Round(total, 2);
+            }
+        }
 
         private int WatchedCount => Store.GetPositions().Count(p => p.IsWatched);
 

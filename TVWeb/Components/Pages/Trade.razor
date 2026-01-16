@@ -89,16 +89,16 @@
                         <td class="text-end align-middle fs-6 mono">@FormatPrice(pos.OpenLevel)</td>
                         <td class="text-end align-middle">
                             <div class="mono fs-6">@FormatPrice(pos.Ask) / @FormatPrice(pos.Bid)</div>
-                            <div class="text-muted x-small">Spread: @Math.Abs(pos.Ask - pos.Bid).ToString("N1")</div>
-                        </td>
-                        <td class="text-end align-middle">
-                            <div class="fw-bold fs-4 @(CalculatePL(pos) >= 0 ? "text-profit" : "text-loss")">
-                                @{
-                                    var ccy = GetQuoteCurrency(pos.Symbol);
-                                    var culture = CURRENCY_CULTURES.GetValueOrDefault(ccy, CultureInfo.GetCultureInfo("en-US"));
-                                    @CalculatePL(pos).ToString("C2", culture)
-                                }
+                            <div class="d-flex flex-column">
+                                <span class="x-small" style="font-size: 0.6rem; color: #5c636a;">
+                                    Spread: @pos.SpreadPips.ToString("0.0") Pips
+                                </span>
                             </div>
+                        </td>
+                        <td class="pl-column">
+                            <span class="pl-value @(pos.ProfitLoss >= 0 ? "text-success" : "text-danger")">
+                                @GetFormattedPL(pos)
+                            </span>
                         </td>
                         <td class="text-center align-middle">
                             <input type="checkbox" @bind="pos.IsWatched" class="trade-check" />

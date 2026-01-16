@@ -1,4 +1,5 @@
-﻿.text-success {
+﻿/* --- Global & Typography --- */
+.text-success {
     color: #28a745 !important;
 }
 
@@ -14,27 +15,22 @@
     color: #ff7675 !important;
 }
 
-.font-monospace {
-    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+/* Professional Dashboard Colors */
+.text-profit {
+    color: #2ecc71;
+    font-weight: 600;
 }
 
-.table-hover tbody tr:hover {
-    background-color: rgba(0,0,0,.03);
-}
-.price-pos {
-    color: #28a745 !important;
-    font-weight: bold;
-}
-
-.price-neg {
-    color: #dc3545 !important;
-    font-weight: bold;
+.text-loss {
+    color: #e74c3c;
+    font-weight: 600;
 }
 
 .mono {
-    font-family: ui-monospace, 'Cascadia Code', monospace;
+    font-family: 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
 }
 
+/* --- Layout Containers --- */
 .trade-header {
     background: #f8f9fa;
     border: 1px solid #dee2e6;
@@ -50,16 +46,19 @@
     padding: 10px;
 }
 
-.symbol-small {
-    font-size: 0.75rem;
-    color: #6c757d;
+.bg-dark-header {
+    background: #23272e;
+    border-radius: 8px;
+    border: 1px solid #3e4451;
 }
-/* Terminal Dashboard Feel */
+
+/* --- Dark Terminal Table Style --- */
 .table-dark-custom {
     background: #1a1d21;
     color: #e0e0e0;
     border-collapse: separate;
-    border-spacing: 0 4px; /* Creates a "row" effect */
+    border-spacing: 0 4px; /* Creates the "floating row" effect */
+    width: 100%;
 }
 
     .table-dark-custom thead th {
@@ -70,6 +69,8 @@
         letter-spacing: 1px;
         border: none;
         padding: 15px;
+        vertical-align: top;
+        line-height: 1.2;
     }
 
     .table-dark-custom tbody tr {
@@ -82,38 +83,34 @@
             cursor: default;
         }
 
-/* Larger Text & Typography */
-.fs-4 {
-    font-size: 1.5rem !important;
+/* --- THE PROFIT/LOSS COLUMN FIX --- */
+.pl-column {
+    text-align: right !important; /* Force alignment to the right */
+    padding-right: 25px !important; /* Adjust this to center perfectly under "Loss" */
+    width: 180px; /* Fixed width stops the column from shrinking/minimizing */
+    min-width: 180px;
+    white-space: nowrap; /* CRITICAL: Prevents text from dropping to a new line */
+    vertical-align: middle;
 }
 
-.fs-5 {
-    font-size: 1.15rem !important;
-}
-
-.x-small {
-    font-size: 0.7rem;
-}
-
-.mono {
+.pl-value {
     font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
-}
-
-/* Colors */
-.text-profit {
-    color: #2ecc71;
-    text-shadow: none;
     font-weight: 600;
+    display: inline-block;
 }
 
-/* Professional Muted Red */
-.text-loss {
-    color: #e74c3c;
-    text-shadow: none;
-    font-weight: 600;
+/* --- Total Footer Style --- */
+.total-row {
+    text-align: right;
+    padding-right: 25px;
+    font-size: 1.15rem;
+    border-top: 2px solid #444;
+    font-weight: bold;
+    color: #fff;
+    white-space: nowrap;
 }
 
-/* Custom Badge UI */
+/* --- UI Components --- */
 .badge-custom {
     padding: 4px 10px;
     border-radius: 4px;
@@ -133,9 +130,11 @@
     border: 1px solid #ff4d4d;
 }
 
-.trade-check {
-    width: 22px;
-    height: 22px;
+.trade-check-sm {
+    width: 16px;
+    height: 16px;
+    margin-top: 4px;
+    cursor: pointer;
     accent-color: #3498db;
 }
 
@@ -151,27 +150,20 @@
         box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
     }
 
-.bg-dark-header {
-    background: #23272e;
-    border-radius: 8px;
-    border: 1px solid #3e4451;
+/* Utilities */
+.fs-4 {
+    font-size: 1.5rem !important;
 }
 
-.trade-check-sm {
-    width: 16px;
-    height: 16px;
-    margin-top: 4px;
-    cursor: pointer;
+.fs-5 {
+    font-size: 1.15rem !important;
 }
 
-/* Ensure captions are clean */
-thead th {
-    vertical-align: top;
-    line-height: 1.2;
+.x-small {
+    font-size: 0.7rem;
 }
 
-.account-filters .btn.active {
-    background-color: #0d6efd;
-    border-color: #0d6efd;
-    color: white;
+.symbol-small {
+    font-size: 0.75rem;
+    color: #6c757d;
 }
