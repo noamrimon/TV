@@ -1,8 +1,9 @@
 
 using Microsoft.AspNetCore.Mvc;
-using System.Net;
-using System.Text.Json;
 using System.Globalization;
+using System.Net;
+using System.Security.Principal;
+using System.Text.Json;
 using TVWeb.Models;
 using TVWeb.Services;
 
@@ -46,6 +47,7 @@ app.MapPost("/api/stream/positions", async (HttpContext http) =>
         string body;
         using (var reader = new StreamReader(http.Request.Body))
             body = await reader.ReadToEndAsync();
+        Console.WriteLine($"[INGEST] body: {body}");
 
         if (string.IsNullOrWhiteSpace(body))
             return Results.BadRequest("Empty body");
@@ -67,6 +69,8 @@ app.MapPost("/api/stream/positions", async (HttpContext http) =>
                 if (string.IsNullOrWhiteSpace(dealId) || string.IsNullOrWhiteSpace(epic)) continue;
 
                 var dir = el.TryGetProperty("direction", out var dirEl) ? dirEl.GetString() : null;
+                var broker = TryString(el, "broker");
+                var account = TryString(el, "account");
                 var size = TryDec(el, "size") ?? 0m;
                 var bid = TryDec(el, "bid");
                 var ask = TryDec(el, "ask");
@@ -82,7 +86,10 @@ app.MapPost("/api/stream/positions", async (HttpContext http) =>
                     Ask: ask,
                     OpenLevel: open,
                     LastUpdatedUtc: DateTimeOffset.UtcNow,
-                    ValuePerPoint: vpp
+                    ValuePerPoint: vpp,
+                    Broker: broker,
+                    Account: account
+
                 ));
             }
 
@@ -125,6 +132,43 @@ app.MapPost("/api/stream/positions", async (HttpContext http) =>
                     positionsStore.Remove(dealId!, epic);
                 return Results.Ok(new { closed = dealId });
             }
+            else if (string.Equals(type, "snapshot", StringComparison.OrdinalIgnoreCase))
+            {
+                // ACCEPT SINGLE SNAPSHOT OBJECTS (SAXO streamer path)
+                var dealId = TryString(root, "dealId");
+                var epic = TryString(root, "epic");
+                if (string.IsNullOrWhiteSpace(dealId) || string.IsNullOrWhiteSpace(epic))
+                    return Results.BadRequest("Snapshot must include non-empty dealId and epic");
+
+                var dir = TryString(root, "direction");
+                var broker = TryString(root, "broker");
+                var account = TryString(root, "account");
+                var size = TryDec(root, "size") ?? 0m;
+                var bid = TryDec(root, "bid");
+                var ask = TryDec(root, "ask");
+                var open = TryDec(root, "openLevel");
+                var vpp = TryDec(root, "valuePerPoint") ?? 1m;
+                var ccy = root.TryGetProperty("currency", out var cEl) ? cEl.GetString() : "USD";
+
+                positionsStore.UpsertRange(new[]
+                {
+                    new PositionSnapshot(
+                        DealId: dealId!,
+                        Epic: epic!,
+                        Direction: dir ?? "",
+                        Size: size,
+                        Bid: bid,
+                        Ask: ask,
+                        OpenLevel: open,
+                        LastUpdatedUtc: DateTimeOffset.UtcNow,
+                        ValuePerPoint: vpp,
+                        Currency: ccy,
+                        Broker: broker,
+                        Account: account
+                   )
+                });
+                return Results.Ok(new { snapshot = dealId });
+            }
             else
             {
                 return Results.BadRequest("Unrecognized payload");
@@ -166,4 +210,18 @@ static decimal? TryDec(JsonElement el, string name)
             return d;
         return null;
     }
+}
+
+static string? TryString(JsonElement el, string name)
+{
+    if (!el.TryGetProperty(name, out var v) || v.ValueKind == JsonValueKind.Null) return null;
+
+    return v.ValueKind switch
+    {
+        JsonValueKind.String => v.GetString(),
+        JsonValueKind.Number => v.GetRawText(),
+        JsonValueKind.True   => bool.TrueString,
+        JsonValueKind.False  => bool.FalseString,
+        _ => v.GetRawText().Trim('"')
+    };
 }

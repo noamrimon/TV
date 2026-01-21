@@ -1,5 +1,4 @@
-﻿
-using com.lightstreamer.client;
+﻿using com.lightstreamer.client;
 using TVStreamer.Listeners;
 using TVStreamer.Models;
 
@@ -22,8 +21,6 @@ public sealed class PriceStreaming
     public void Subscribe(List<PositionInfo> positions, string accountId)
     {
         var items = positions.Select(p => $"PRICE:{accountId}:{p.Epic}").ToArray();
-
-        // Include ladder + top-of-book; ladder may be absent on some instruments
         var fields = new[] { "BIDPRICE1", "ASKPRICE1", "BID", "OFFER", "TIMESTAMP" };
 
         if (items.Length == 0)
@@ -40,6 +37,7 @@ public sealed class PriceStreaming
 
         _priceSub.addListener(new PriceListener(items, positions, _ingestUrl, _ingestKey));
         _client.subscribe(_priceSub);
+
         Console.WriteLine($"[LS] PRICE subscribed with {items.Length} items.");
     }
 

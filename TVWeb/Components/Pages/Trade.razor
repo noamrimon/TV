@@ -60,7 +60,12 @@
         <table class="table table-dark-custom mb-0">
             <thead>
                 <tr>
+                    <!-- FIRST COLUMN: ACCOUNT -->
+                    <th>Account</th>
+
+                    <!-- SECOND COLUMN: MARKET (moved here) -->
                     <th>Market</th>
+
                     <th>Direction</th>
                     <th class="text-end">Size</th>
                     <th class="text-end">Entry</th>
@@ -76,17 +81,32 @@
                 @foreach (var pos in FilteredPositions)
                 {
                     <tr>
+                        <!-- ACCOUNT column: Broker + Account -->
+                        <td class="align-middle">
+                            <div class="fw-bold fs-6">@(!string.IsNullOrWhiteSpace(pos.Broker) ? pos.Broker : "—")</div>
+                            <div class="text-muted x-small mono">@(!string.IsNullOrWhiteSpace(pos.Account) ? pos.Account : "—")</div>
+                        </td>
+
+                        <!-- MARKET column: readable market + position id -->
                         <td class="align-middle">
                             <div class="fw-bold fs-5">@GetMarketDisplay(pos.Symbol)</div>
                             <div class="text-muted x-small mono">@pos.Id</div>
                         </td>
+
+                        <!-- DIRECTION -->
                         <td class="align-middle">
-                            <span class="badge-custom @(pos.Type.Contains("BUY") ? "side-buy" : "side-sell")">
-                                @pos.Type
+                            <span class="badge-custom @(pos.Type.Contains("BUY", StringComparison.OrdinalIgnoreCase) ? "side-buy" : "side-sell")">
+                                @(!string.IsNullOrWhiteSpace(pos.Type) ? pos.Type.ToUpperInvariant() : "—")
                             </span>
                         </td>
-                        <td class="text-end align-middle fs-5 mono">@pos.Size</td>
+
+                        <!-- SIZE -->
+                        <td class="text-end align-middle fs-5 mono">@Math.Abs(pos.Size)</td>
+
+                        <!-- ENTRY -->
                         <td class="text-end align-middle fs-6 mono">@FormatPrice(pos.OpenLevel)</td>
+
+                        <!-- ASK / BID + Spread -->
                         <td class="text-end align-middle">
                             <div class="mono fs-6">@FormatPrice(pos.Ask) / @FormatPrice(pos.Bid)</div>
                             <div class="d-flex flex-column">
@@ -95,11 +115,15 @@
                                 </span>
                             </div>
                         </td>
+
+                        <!-- PROFIT / LOSS -->
                         <td class="pl-column">
                             <span class="pl-value @(pos.ProfitLoss >= 0 ? "text-success" : "text-danger")">
                                 @GetFormattedPL(pos)
                             </span>
                         </td>
+
+                        <!-- WATCH -->
                         <td class="text-center align-middle">
                             <input type="checkbox" @bind="pos.IsWatched" class="trade-check" />
                         </td>
@@ -109,4 +133,3 @@
         </table>
     </div>
 </div>
-

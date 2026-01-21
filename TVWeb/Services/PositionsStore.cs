@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Security.Principal;
 using TVWeb.Models;
 
 namespace TVWeb.Services;
@@ -8,38 +9,77 @@ public class PositionsStore
     public readonly ConcurrentDictionary<string, PositionModel> Positions = new();
     public event Action? OnPositionsChanged;
 
+
     public void UpsertRange(IEnumerable<PositionSnapshot> snapshots)
     {
         foreach (var s in snapshots)
         {
+            // Normalize helper
+            static string NormalizeDir(string? dir)
+                => string.IsNullOrWhiteSpace(dir) ? "" : dir.Trim().ToUpperInvariant();
+
+            string InferDirectionFromSize(decimal size)
+                => size < 0 ? "SELL" : (size > 0 ? "BUY" : "");
+
             Positions.AddOrUpdate(s.DealId,
-                (key) => new PositionModel
-                {
-                    Id = s.DealId,
-                    Symbol = s.Epic,
-                    Type = s.Direction,
-                    Bid = s.Bid ?? 0,
-                    Ask = s.Ask ?? 0,
-                    OpenLevel = s.OpenLevel ?? 0,
-                    Size = s.Size,
-                    ValuePerPoint = s.ValuePerPoint ?? 1,
-                    Currency = s.Currency ?? "USD"
+                // INSERT
+                key => {
+                    var dir = NormalizeDir(s.Direction);
+                    if (string.IsNullOrEmpty(dir))
+                    {
+                        // Fallback: infer from size if direction not supplied on first snapshot
+                        dir = InferDirectionFromSize(s.Size);
+                    }
+
+                    return new PositionModel
+                    {
+                        Id = s.DealId,
+                        Broker = s.Broker ?? "",
+                        Account = s.Account ?? "",
+                        Symbol = s.Epic,
+                        Type = dir,                               // <- ensure something on insert
+                        Bid = s.Bid ?? 0,
+                        Ask = s.Ask ?? 0,
+                        OpenLevel = s.OpenLevel ?? 0,
+                        Size = s.Size,
+                        ValuePerPoint = s.ValuePerPoint ?? 1,
+                        Currency = s.Currency ?? "USD"
+                    };
                 },
-                (key, existing) => {
+                // UPDATE
+                (key, existing) =>
+                {
                     existing.Bid = s.Bid ?? existing.Bid;
                     existing.Ask = s.Ask ?? existing.Ask;
                     existing.OpenLevel = s.OpenLevel ?? existing.OpenLevel;
                     existing.Size = s.Size;
                     existing.ValuePerPoint = s.ValuePerPoint ?? existing.ValuePerPoint;
 
-                    // Ensure we don't lose the currency if it's sent in a refresh
+                    if (!string.IsNullOrEmpty(s.Broker)) existing.Broker = s.Broker!;
+                    if (!string.IsNullOrEmpty(s.Account)) existing.Account = s.Account!;
                     if (!string.IsNullOrEmpty(s.Currency)) existing.Currency = s.Currency;
+
+                    // 🔑 Direction update logic:
+                    var newDir = NormalizeDir(s.Direction);
+                    if (!string.IsNullOrEmpty(newDir))
+                    {
+                        existing.Type = newDir;                     // <- update direction when provided
+                    }
+                    else if (string.IsNullOrEmpty(existing.Type))
+                    {
+                        // If we still never had a direction, infer from size sign as a fallback
+                        var inferred = InferDirectionFromSize(s.Size);
+                        if (!string.IsNullOrEmpty(inferred))
+                            existing.Type = inferred;
+                    }
 
                     return existing;
                 });
         }
+
         OnPositionsChanged?.Invoke();
     }
+
 
     public void ApplyTick(PriceTick tick)
     {

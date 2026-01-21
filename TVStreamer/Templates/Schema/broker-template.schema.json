@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "broker-template.schema.json",
+  "type": "object",
+  "required": [
+    "Name",
+    "Transport",
+    "BrokerTemplate"
+  ],
+  "properties": {
+    "Name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "Transport": {
+      "type": "string",
+      "enum": [
+        "Http",
+        "WebSocket",
+        "Fix4.4",
+        "Fix4.2",
+        "IBKR-TWS",
+        "RawTcp"
+      ]
+    },
+    "BrokerTemplate": {
+      "type": "string",
+      "enum": [
+        "BearerToken",
+        "BasicAuth",
+        "ApiKeyHeader",
+        "CustomLogin",
+        "OAuth2.ClientCredentials",
+        "OAuth2.AuthCodePkce",
+        "Fix.SessionLogon",
+        "IBKR.Session"
+      ]
+    },
+    "Http": {
+      "type": "object",
+      "properties": {
+        "BaseUrl": {
+          "type": "string"
+        },
+        "DefaultHeaders": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "TimeoutSeconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "BaseUrl"
+      ]
+    },
+    "WebSocket": {
+      "type": "object",
+      "properties": {
+        "Url": {
+          "type": "string"
+        },
+        "Headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "Protocol": {
+          "type": "string"
+        }
+      }
+    },
+    "Vars": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "Auth": {
+      "type": "object",
+      "properties": {
+        "Steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "Request": {
+                "type": "object",
+                "properties": {
+                  "Method": {
+                    "type": "string",
+                    "enum": [
+                      "GET",
+                      "POST",
+                      "PUT",
+                      "DELETE"
+                    ]
+                  },
+                  "Path": {
+                    "type": "string"
+                  },
+                  "Headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "Body": {}
+                },
+                "required": [
+                  "Method",
+                  "Path"
+                ]
+              },
+              "Extract": {
+                "type": "object",
+                "properties": {
+                  "Headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "Json": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "BindDefaults": {
+                "type": "object",
+                "properties": {
+                  "Headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "Request"
+            ]
+          }
+        }
+      }
+    },
+    "Operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "Name": {
+            "type": "string"
+          },
+          "Method": {
+            "type": "string"
+          },
+          "Path": {
+            "type": "string"
+          },
+          "Headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "Query": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "Body": {}
+        },
+        "required": [
+          "Name",
+          "Method"
+        ]
+      }
+    }
+  }
+}

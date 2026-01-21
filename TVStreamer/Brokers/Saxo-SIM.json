@@ -1,0 +1,99 @@
+{
+  "Name": "Saxo-SIM",
+  "Transport": "Http",
+  "BrokerTemplate": "BearerToken",
+  "Http": {
+    "BaseUrl": "https://gateway.saxobank.com/sim/openapi",
+    "DefaultHeaders": {
+      "Accept": "application/json; charset=utf-8",
+      "Accept-Language": "en-US"
+    },
+    "TimeoutSeconds": 30
+  },
+  "Vars": {
+    "AccessToken": "eyJhbGciOiJFUzI1NiIsIng1dCI6IjY3NEM0MjFEMzZEMUE1OUNFNjFBRTIzMjMyOTVFRTAyRTc3MDMzNTkifQ.eyJvYWEiOiI3Nzc3NSIsImlzcyI6Im9hIiwiYWlkIjoiMTA5IiwidWlkIjoic3xteVZOemlHUUc5ZzR4NEFkcDh1dz09IiwiY2lkIjoic3xteVZOemlHUUc5ZzR4NEFkcDh1dz09IiwiaXNhIjoiRmFsc2UiLCJ0aWQiOiIyMDAyIiwic2lkIjoiYmVkMTEwZWFmNmI1NDRjODgxM2E3Y2MxY2I0NjY1YTciLCJkZ2kiOiI4NCIsImV4cCI6IjE3Njg5ODI0NzciLCJvYWwiOiIxRiIsImlpZCI6IjU5YmIxOTNmNGM1MTRmZTEyNWMwMDhkZTRjNTUxZWIwIn0.bjZFhYPwyHH-qYIs_PrbTvenp6qu1KSRCXOWi169jzz0k_uudlQzkauVXCo8O3rSDwNZHkiivzl4Zw8bbCUPFQ",
+    "ContextId": "{{Guid}}"
+  },
+  "Operations": [
+    {
+      "Name": "GetPositions",
+      "Method": "GET",
+      "Path": "/port/v1/positions/me?$top=200&FieldGroups=PositionBase,PositionView,DisplayAndFormat"
+    }
+  ],
+  "Streaming": {
+    "Provider": "WebSocket",
+    "PreSteps": [
+      {
+        "Request": {
+          "Method": "GET",
+          "Path": "/port/v1/clients/me",
+          "Headers": {
+            "Accept": "application/json; charset=utf-8"
+          }
+        },
+        "Extract": {
+          "Json": {
+            "ClientKey": "ClientKey",
+            "AccountKey": "DefaultAccountKey"
+          }
+        }
+      }
+    ],
+
+    "Ws": {
+      "Url": "wss://sim-streaming.saxobank.com/sim/oapi/streaming/ws/connect?authorization=BEARER%20{{Vars.AccessToken}}&contextId={{Vars.ContextId}}",
+      "Headers": {
+        "Authorization": "Bearer {{Vars.AccessToken}}"
+      }
+    },
+
+    "Subscriptions": [
+      {
+        "Request": {
+          "Method": "POST",
+          "Path": "/port/v1/positions/subscriptions",
+          "Headers": {
+            "Accept": "application/json; charset=utf-8",
+            "X-OpenAPI-ContextId": "{{Vars.ContextId}}"
+          },
+          "Body": {
+            "ContextId": "{{Vars.ContextId}}",
+            "ReferenceId": "posSub1",
+            "Format": "application/json",
+            "Arguments": {
+              "ClientKey": "{{Vars.ClientKey}}",
+              "AccountKey": "{{Vars.AccountKey}}",
+              "Uic": 0,
+              "AssetType": "FxSpot",
+              "FieldGroups": [
+                "PositionBase",
+                "PositionView",
+                "DisplayAndFormat"
+              ]
+            }
+          }
+        }
+      }
+    ],
+
+    "Frames": {
+      "ReferenceId": "posSub1",
+      "DataArrayPath": "Data",
+      "IngestTemplate": {
+        "type": "snapshot",
+        "broker": "SAXO",
+        "account": "{{Vars.AccountKey}}",
+        "dealId": "{{item.PositionId}}",
+        "epic": "SAXO-{{coalesce(item.DisplayAndFormat.Symbol, item.PositionBase.Uic)}}",
+        "direction": "{{coalesce(item.Direction, item.PositionBase.BuySell)}}",
+        "size": "{{item.PositionBase.Amount}}",
+        "openLevel": "{{item.PositionBase.OpenPrice}}",
+        "bid": "{{item.PositionView.Bid}}",
+        "ask": "{{item.PositionView.Ask}}",
+        "valuePerPoint": 1,
+        "currency": "{{item.Currency}}"
+      }
+    }
+  }
+}

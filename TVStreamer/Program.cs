@@ -3,7 +3,9 @@ using com.lightstreamer.client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using System.Globalization;
+using System.Security.Principal;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using TVStreamer.Models;
 using TVStreamer.Streaming;
 
@@ -16,34 +18,126 @@ internal class Program
         var builder = Host.CreateApplicationBuilder(args);
         var config = builder.Configuration.AddJsonFile("appsettings.json", optional: false).Build();
         var host = builder.Build();
+        JsonNode? saxoRestNode = null;
 
-        var ig = config.GetSection("IG");
-        var apiKey = ig["ApiKey"]!;
-        var baseUrl = ig["BaseUrl"]!.TrimEnd('/');
-        var username = ig["Username"]!;
-        var password = ig["Password"]!;
-
+        // -----------------------------
+        // Ingest configuration
+        // -----------------------------
         var ingest = config.GetSection("WebIngest");
-        var ingestUrl = ingest["Url"]!;        // e.g., https://localhost:7199/api/stream/positions
+        var ingestUrl = ingest["Url"]!;
         var ingestKey = ingest["IngestKey"]!;
 
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        // -----------------------------
+        // Discover all broker JSONs
+        // -----------------------------
+        var baseDir = AppContext.BaseDirectory;
+        var brokerFiles = BrokerLoader.EnumerateBrokerFiles(baseDir).ToList();
+        if (brokerFiles.Count == 0)
+        {
+            Console.WriteLine("[BOOT] No broker configs found in /Brokers.");
+            return;
+        }
 
-        // 1) Login & tokens
-        var auth = await IgAuth.LoginAsync(http, baseUrl, apiKey, username, password);
-        Console.WriteLine($"[IG] Auth OK. AccountId={auth.AccountId}, ClientId={auth.ClientId}");
+        Console.WriteLine($"[BOOT] Found {brokerFiles.Count} broker file(s).");
 
-        // Default headers for subsequent REST calls
-        http.DefaultRequestHeaders.Clear();
-        http.DefaultRequestHeaders.Add("X-IG-API-KEY", apiKey);
-        http.DefaultRequestHeaders.Add("Accept", "application/json; charset=UTF-8");
-        http.DefaultRequestHeaders.Add("Version", "2");
-        http.DefaultRequestHeaders.Add("CST", auth.Cst);
-        http.DefaultRequestHeaders.Add("X-SECURITY-TOKEN", auth.Xst);
+        // Start all brokers concurrently
+        var tasks = new List<Task>();
 
-        // 2) Fetch positions
-        var posResp = await http.GetAsync($"{baseUrl}/positions");
+        foreach (var file in brokerFiles)
+        {
+            try
+            {
+                // Optional "Enabled": false bypass (read directly from JSON)
+                bool enabled = true;
+                using (var raw = JsonDocument.Parse(File.ReadAllText(file)))
+                {
+                    if (raw.RootElement.TryGetProperty("Enabled", out var eProp) &&
+                        eProp.ValueKind == JsonValueKind.False)
+                    {
+                        enabled = false;
+                    }
+                }
+                if (!enabled)
+                {
+                    Console.WriteLine($"[BOOT] Skipping (disabled): {Path.GetFileName(file)}");
+                    continue;
+                }
+
+                var cfg = BrokerLoader.LoadConfig(file);
+                Console.WriteLine($"[BOOT] Loaded broker config: {cfg.Name}");
+
+                // Authenticate generically (TemplateExecutor dispatches by BrokerTemplate)
+                var session = await TemplateExecutor.AuthenticateAsync(cfg, CancellationToken.None);
+                Console.WriteLine($"[{cfg.Name}] Auth OK.");
+
+                // IG-like (has lightstreamerEndpoint): run IG streaming flow
+                if (!string.IsNullOrWhiteSpace(session.LightstreamerEndpoint))
+                {
+                    tasks.Add(RunIgFlowAsync(cfg, session, ingestUrl, ingestKey));
+                }
+                else
+                {
+                    // Generic REST-only (and maybe WS streaming if configured in JSON)
+                    tasks.Add(RunGenericRestFlowAsync(cfg, session, ingestUrl, ingestKey, file));
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[BOOT] {Path.GetFileName(file)} failed: {ex.Message}");
+            }
+        }
+
+        Console.WriteLine("Streaming … press Ctrl+C to stop.");
+        _ = Task.WhenAll(tasks);
+        await host.RunAsync();
+    }
+
+    // ------------------------------------------------------------
+    // IG: REST snapshot + Lightstreamer streaming (non-blocking)
+    // ------------------------------------------------------------
+    private static async Task RunIgFlowAsync(BrokerConfig cfg, AuthSession session, string ingestUrl, string ingestKey)
+    {
+        var accountId = session.AccountId ?? "(unknown)";
+        var lsEndpoint = session.LightstreamerEndpoint;
+
+        Console.WriteLine($"[{cfg.Name}] AccountId  = {accountId}");
+        Console.WriteLine($"[{cfg.Name}] REST Base  = {session.BaseUrl}");
+        Console.WriteLine($"[{cfg.Name}] LS Endpoint= {lsEndpoint ?? "(none)"}");
+
+        // Absolute REST URI builder
+        static Uri RestUri(AuthSession s, string path) =>
+            new Uri($"{s.BaseUrl}/{path.TrimStart('/')}", UriKind.Absolute);
+
+        // Safe GET: allow only same-host HTTPS redirects
+        static async Task<HttpResponseMessage> GetWithSafeRedirect(AuthSession s, string path, CancellationToken ct = default)
+        {
+            var baseUri = new Uri(s.BaseUrl);
+            var resp = await s.Http.GetAsync(RestUri(s, path), ct);
+
+            if ((int)resp.StatusCode >= 300 && (int)resp.StatusCode < 400)
+            {
+                var location = resp.Headers.Location;
+                Uri? target = null;
+                if (location != null)
+                    target = location.IsAbsoluteUri ? location : new Uri(baseUri, location);
+
+                Console.WriteLine($"[REST] Redirect {(int)resp.StatusCode} -> {target}");
+                if (target != null &&
+                    target.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) &&
+                    target.Host.Equals(baseUri.Host, StringComparison.OrdinalIgnoreCase))
+                {
+                    resp.Dispose();
+                    return await s.Http.GetAsync(target, ct);
+                }
+                throw new HttpRequestException($"Blocked redirect to '{target?.ToString() ?? "(null)"}'");
+            }
+            return resp;
+        }
+
+        // 1) Snapshot: /positions
+        var posResp = await GetWithSafeRedirect(session, "/positions");
         posResp.EnsureSuccessStatusCode();
+
         using var posJson = JsonDocument.Parse(await posResp.Content.ReadAsStringAsync());
         var positions = posJson.RootElement.GetProperty("positions")
             .EnumerateArray()
@@ -56,43 +150,38 @@ internal class Program
             ))
             .ToList();
 
-        Console.WriteLine($"[IG] Open positions: {positions.Count}");
+        Console.WriteLine($"[{cfg.Name}] Open positions: {positions.Count}");
 
-        // 2a) Fetch market details per epic (to compute ValuePerPoint from instrument.unit/contractSize)
-        //     IG REST: /markets/{epic} returns instrument.contractSize and instrument.unit (CONTRACTS | AMOUNT)  [2](https://labs.ig.com/reference/markets-epic.html)
+        // 2) ValuePerPoint
         var valuePerPointByEpic = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
         foreach (var epic in positions.Select(p => p.Epic).Distinct())
         {
             try
             {
-                var mdResp = await http.GetAsync($"{baseUrl}/markets/{epic}");
+                var mdResp = await GetWithSafeRedirect(session, $"/markets/{epic}");
                 mdResp.EnsureSuccessStatusCode();
+
                 using var md = JsonDocument.Parse(await mdResp.Content.ReadAsStringAsync());
                 var instrument = md.RootElement.GetProperty("instrument");
-                var unit = instrument.TryGetProperty("unit", out var uEl) ? uEl.GetString() : null; // e.g., CONTRACTS | AMOUNT
-                var contractSizeStr = instrument.TryGetProperty("contractSize", out var csEl) ? csEl.GetString() : "1";
 
-                // Heuristic:
-                // - If unit == CONTRACTS, use contractSize as ValuePerPoint
-                // - Else (AMOUNT), default to 1
-                // This aligns with common CFD P&L formula (price diff × lots × contract size). [3](https://www.bullwaves.com/helpcenter/how-to-calculate-profit-or-loss-for-cfd-positions)
+                var unit = instrument.TryGetProperty("unit", out var uEl) ? uEl.GetString() : null;
+                var contractSize = instrument.TryGetProperty("contractSize", out var csEl) ? csEl.GetString() : "1";
+
                 decimal vpp = 1m;
-                if (string.Equals(unit, "CONTRACTS", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(unit, "CONTRACTS", StringComparison.OrdinalIgnoreCase) &&
+                    decimal.TryParse(contractSize, NumberStyles.Any, CultureInfo.InvariantCulture, out var cs))
                 {
-                    if (decimal.TryParse(contractSizeStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var cs))
-                        vpp = cs;
+                    vpp = cs;
                 }
                 valuePerPointByEpic[epic] = vpp;
-                Console.WriteLine($"[IG] {epic} ValuePerPoint={vpp} (unit={unit}, contractSize={contractSizeStr})");
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine($"[IG] markets/{epic} failed: {ex.Message} — defaulting ValuePerPoint=1");
                 valuePerPointByEpic[epic] = 1m;
             }
         }
 
-        // snapshots for TVWeb (array) — include ValuePerPoint to fix P/L scale
+        // 3) Send initial snapshots
         var snapshotsPayload = positions.Select(p => new
         {
             type = "snapshot",
@@ -103,36 +192,40 @@ internal class Program
             openLevel = p.OpenLevel,
             bid = (decimal?)null,
             ask = (decimal?)null,
-            valuePerPoint = valuePerPointByEpic.TryGetValue(p.Epic, out var vpp) ? vpp : 1m,
-            currency = p.Currency // Ensure this is passed to TVWeb
+            valuePerPoint = valuePerPointByEpic.GetValueOrDefault(p.Epic, 1m),
+            currency = p.Currency,
+            broker = "IG",
+            account = accountId
         });
-
-        // Post to single ingest endpoint
         await HttpPoster.PostJsonAsync(ingestUrl, ingestKey, snapshotsPayload);
 
-        // 3) Lightstreamer client
-        var client = new LightstreamerClient(auth.LightstreamerEndpoint, "DEFAULT");
-        client.connectionDetails.User = auth.AccountId;
-        client.connectionDetails.Password = $"CST-{auth.Cst}|XST-{auth.Xst}"; // IG-required format  [1](https://labs.ig.com/rest-trading-api-reference.html)
-        client.connect();
-        Console.WriteLine($"[LS] Connecting to {auth.LightstreamerEndpoint} …");
+        // 4) Lightstreamer streaming (per IG docs)
+        var cst = session.Http.DefaultRequestHeaders.GetValues("CST").First();
+        var xst = session.Http.DefaultRequestHeaders.GetValues("X-SECURITY-TOKEN").First();
+        var lsPassword = $"CST-{cst}|XST-{xst}";
 
-        // 4) Start PRICE + TRADE streaming
-        var price = new PriceStreaming(client, ingestUrl, ingestKey);
-        price.Subscribe(positions, auth.AccountId);
+        var ls = new LightstreamerClient(lsEndpoint!, "DEFAULT");
+        ls.connectionDetails.User = accountId;
+        ls.connectionDetails.Password = lsPassword;
+        ls.connect();
+        Console.WriteLine("[LS] Connected. Starting streams...");
 
-        var trade = new TradeStreaming(client, price, positions, auth.AccountId);
-        trade.Subscribe(ingestUrl, ingestKey);
+        var priceStream = new PriceStreaming(ls, ingestUrl, ingestKey);
+        priceStream.Subscribe(positions, accountId);
 
-        // 5) Reconciliation loop (snapshot safety net)
+        var tradeStream = new TradeStreaming(ls, priceStream, positions, accountId);
+        tradeStream.Subscribe(ingestUrl, ingestKey);
+
+        // 5) Reconciliation loop
         _ = Task.Run(async () =>
         {
             while (true)
             {
                 try
                 {
-                    var resp = await http.GetAsync($"{baseUrl}/positions");
+                    var resp = await GetWithSafeRedirect(session, "/positions");
                     resp.EnsureSuccessStatusCode();
+
                     using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
                     var fresh = doc.RootElement.GetProperty("positions")
                         .EnumerateArray()
@@ -165,8 +258,9 @@ internal class Program
                                 openLevel = p.OpenLevel,
                                 bid = (decimal?)null,
                                 ask = (decimal?)null,
-                                valuePerPoint = valuePerPointByEpic.TryGetValue(p.Epic, out var vpp) ? vpp : 1m
+                                valuePerPoint = valuePerPointByEpic.GetValueOrDefault(p.Epic, 1m)
                             });
+
                             await HttpPoster.PostJsonAsync(ingestUrl, ingestKey, payload);
                         }
 
@@ -177,20 +271,101 @@ internal class Program
                         }
 
                         positions = fresh;
-                        price.Resubscribe(positions, auth.AccountId);
-                        Console.WriteLine($"[RECON] Resynced positions: {positions.Count}");
+                        priceStream.Resubscribe(positions, accountId);
+                        Console.WriteLine($"[RECON] Position list updated: {positions.Count}");
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[RECON] reconcile error: {ex.Message}");
+                    Console.WriteLine($"[RECON] Error: {ex.Message}");
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(60));
             }
         });
-
-        Console.WriteLine("Streaming … press Ctrl+C to stop.");
-        await host.RunAsync();
     }
+
+    // ------------------------------------------------------------
+    // Generic REST flow (+ start WS streaming if Streaming section exists in JSON)
+    // ------------------------------------------------------------
+
+    private static async Task RunGenericRestFlowAsync(
+        BrokerConfig cfg, AuthSession session,
+        string ingestUrl, string ingestKey, string brokerFilePath)
+    {
+        JsonNode? saxoRestNode = null;   // NEW
+
+        Console.WriteLine($"[{cfg.Name}] Running generic REST operations (no Lightstreamer).");
+
+        var op = cfg.Operations?.FirstOrDefault(o =>
+                     string.Equals(o.Method, "GET", StringComparison.OrdinalIgnoreCase))
+                     ?? cfg.Operations?.FirstOrDefault();
+
+        if (op is not null && !string.IsNullOrWhiteSpace(op.Path))
+        {
+            var uri = new Uri($"{session.BaseUrl}/{op.Path.TrimStart('/')}", UriKind.Absolute);
+            var resp = await session.Http.GetAsync(uri);
+            Console.WriteLine($"[{cfg.Name}] {op.Name} -> {(int)resp.StatusCode} {resp.StatusCode}");
+
+            var content = await resp.Content.ReadAsStringAsync();
+
+            if (resp.IsSuccessStatusCode)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(content);
+                    int count = doc.RootElement.TryGetProperty("Data", out var data)
+                                && data.ValueKind == JsonValueKind.Array
+                                ? data.GetArrayLength()
+                                : 0;
+
+                    var pretty = System.Text.Json.JsonSerializer.Serialize(
+                        doc.RootElement,
+                        new JsonSerializerOptions { WriteIndented = true });
+
+                    Console.WriteLine("[SAXO:REST] Full positions JSON:");
+                    Console.WriteLine(pretty);
+
+                    Console.WriteLine($"[{cfg.Name}] Items: {count}");
+
+                    if (cfg.Name.Equals("Saxo-SIM", StringComparison.OrdinalIgnoreCase))
+                    {
+                        saxoRestNode = JsonNode.Parse(content);
+                    }
+                }
+                catch
+                {
+                    Console.WriteLine($"[{cfg.Name}] Body length: {content.Length}");
+                }
+            }
+        }
+
+        // Start Streamer
+        try
+        {
+            using var fullDoc = JsonDocument.Parse(File.ReadAllText(brokerFilePath));
+            if (fullDoc.RootElement.TryGetProperty("Streaming", out var streaming) &&
+                streaming.ValueKind == JsonValueKind.Object &&
+                streaming.TryGetProperty("Ws", out _))
+            {
+                var streamer = new GenericWebSocketStreamer(
+                    session.Http,
+                    session.BaseUrl,
+                    session.Vars,
+                    streaming,
+                    ingestUrl,
+                    ingestKey,
+                    saxoRestNode   // NEW parameter
+                );
+
+                _ = streamer.StartAsync();
+                Console.WriteLine($"[{cfg.Name}] Generic WebSocket streaming started.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{cfg.Name}] Streaming init failed: {ex.Message}");
+        }
+    }
+
 }

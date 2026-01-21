@@ -21,7 +21,7 @@ public sealed class TradeStreaming
 
     public void Subscribe(string ingestUrl, string ingestKey)
     {
-        var fields = new[] { "OPU", "CONFIRMS", "WOU" }; // TRADE fields [3](https://deepwiki.com/joaquinbejar/ig-client/7.3-trade-and-account-streaming)
+        var fields = new[] { "OPU", "CONFIRMS", "WOU" };
         var item = $"TRADE:{_accountId}";
 
         var tradeSub = new Subscription("DISTINCT", new[] { item }, fields)
@@ -44,10 +44,15 @@ public sealed class TradeStreaming
                         changed = true;
                     }
                 }
+
                 foreach (var rem in delta.Removed)
                 {
                     var idx = _positions.FindIndex(p => p.DealId == rem.DealId);
-                    if (idx >= 0) { _positions.RemoveAt(idx); changed = true; }
+                    if (idx >= 0)
+                    {
+                        _positions.RemoveAt(idx);
+                        changed = true;
+                    }
                 }
 
                 if (changed)
@@ -57,6 +62,6 @@ public sealed class TradeStreaming
             }));
 
         _client.subscribe(tradeSub);
-        Console.WriteLine("[LS] TRADE subscribed (OPU/CONFIRMS/WOU).");
+        Console.WriteLine("[LS] TRADE subscribed");
     }
 }

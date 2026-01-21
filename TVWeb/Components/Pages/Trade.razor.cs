@@ -161,14 +161,26 @@ namespace TVWeb.Components.Pages
         // Helper to extract a readable Market name from an IG Epic
         private string GetMarketDisplay(string epic)
         {
+            // IG EPIC: "CS.D.EURUSD.MINI.IP"
             var parts = epic.Split('.');
             if (parts.Length >= 3)
             {
-                var pair = parts[2]; // Usually "EURUSD" or "USDJPY"
-                if (pair.Length == 6 && !pair.Contains("100")) // standard FX
+                var pair = parts[2];
+                if (pair.Length == 6 && pair.All(char.IsLetter))
                     return $"{pair.Substring(0, 3)}/{pair.Substring(3, 3)}";
-                return pair; // Indices or Commodities
+                return pair;
             }
+            // SAXO symbols like "SAXO-EURUSD" or "SAXO-5025327830"
+            if (epic.StartsWith("SAXO-", StringComparison.OrdinalIgnoreCase))
+            {
+                var sym = epic.Substring(5);
+                if (sym.Length == 6 && sym.All(char.IsLetter))
+                    return $"{sym.Substring(0, 3)}/{sym.Substring(3, 3)}";
+                return sym; // UIC or other format
+            }
+            // raw 6-letter symbol?
+            if (epic.Length == 6 && epic.All(char.IsLetter))
+                return $"{epic.Substring(0, 3)}/{epic.Substring(3, 3)}";
             return epic;
         }
         // Logic for Select All
@@ -235,7 +247,7 @@ namespace TVWeb.Components.Pages
                 {
                     // Extract the Term currency (e.g., "SGD" or "CAD")
                     string iso = ExtractTermCurrency(pos.Symbol);
-
+                    
                     if (iso == "USD")
                     {
                         total += pos.ProfitLoss;

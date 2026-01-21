@@ -1,0 +1,60 @@
+{
+  "Name": "IG-Demo",
+  "Transport": "Http",
+  "BrokerTemplate": "CustomLogin",
+
+  "Http": {
+    "BaseUrl": "https://demo-api.ig.com/gateway/deal/",
+    "DefaultHeaders": {
+      "Accept": "application/json; charset=UTF-8",
+      "Version": "2",
+      "X-IG-API-KEY": "{{Vars.ApiKey}}"
+    },
+    "TimeoutSeconds": 30
+  },
+
+  "Vars": {
+    "ApiKey": "78e135616531b9964faef1fb313d259af63c1544",
+    "User": "noamlg35demo",
+    "Password": "1qaz@WSX"
+  },
+
+  "Auth": {
+    "Steps": [
+      {
+        "Request": {
+          "Method": "POST",
+          "Path": "/session",
+          "Headers": {
+            "X-IG-API-KEY": "{{Vars.ApiKey}}",
+            "Version": "2",
+            "Accept": "application/json; charset=UTF-8",
+            "Content-Type": "application/json; charset=UTF-8"
+        },
+          "Body": {
+            "identifier": "{{Vars.User}}",
+            "password": "{{Vars.Password}}"
+          }
+        },
+
+        "Extract": {
+          "Headers": {
+            "CST": "CST",
+            "XST": "X-SECURITY-TOKEN"
+          },
+          "Json": {
+            "currentAccountId": "currentAccountId",
+            "lightstreamerEndpoint": "lightstreamerEndpoint"
+          }
+        },
+
+        "BindDefaults": {
+          "Headers": {
+            "CST": "{{CST}}",
+            "X-SECURITY-TOKEN": "{{XST}}"
+          }
+        }
+      }
+    ]
+  }
+}

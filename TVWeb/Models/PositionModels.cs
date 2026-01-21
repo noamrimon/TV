@@ -4,7 +4,8 @@
         string DealId, string Epic, string Direction, decimal Size,
         decimal? Bid = null, decimal? Ask = null, decimal? OpenLevel = null,
         decimal? ProfitLoss = null, string? Currency = "USD",
-        bool IsWatched = false, DateTimeOffset? LastUpdatedUtc = null, decimal? ValuePerPoint = null
+        bool IsWatched = false, DateTimeOffset? LastUpdatedUtc = null, decimal? ValuePerPoint = null,
+        string? Broker = null, string? Account = null
     );
 
     public sealed record PriceTick(string Epic, string DealId, decimal? Bid, decimal? Ask, DateTimeOffset? TimestampUtc);
@@ -12,6 +13,8 @@
     public class PositionModel
     {
         public string Id { get; set; } = string.Empty;
+        public string Broker { get; set; } = string.Empty;
+        public string Account { get; set; } = string.Empty;
         public string Symbol { get; set; } = string.Empty;
         public string Type { get; set; } = string.Empty;
         public decimal Bid { get; set; }
@@ -80,7 +83,7 @@
                 }
 
                 // 3. CRITICAL: Multiply everything FIRST, then round at the very end.
-                decimal total = diff * multiplier * Size * ValuePerPoint;
+                decimal total = diff * multiplier * Math.Abs(Size) * ValuePerPoint;
 
                 return Math.Round(total, 2);
             }
