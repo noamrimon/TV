@@ -16,7 +16,11 @@
   "Vars": {
     "ApiKey": "78e135616531b9964faef1fb313d259af63c1544",
     "User": "noamlg35demo",
-    "Password": "1qaz@WSX"
+    "Password": "1qaz@WSX",
+    "CST": "",
+    "XST": "",
+    "AccountId": "",
+    "LightStreamerEndpoint": ""
   },
 
   "Auth": {
@@ -30,7 +34,7 @@
             "Version": "2",
             "Accept": "application/json; charset=UTF-8",
             "Content-Type": "application/json; charset=UTF-8"
-        },
+          },
           "Body": {
             "identifier": "{{Vars.User}}",
             "password": "{{Vars.Password}}"
@@ -44,7 +48,7 @@
           },
           "Json": {
             "currentAccountId": "currentAccountId",
-            "lightstreamerEndpoint": "lightstreamerEndpoint"
+            "LightStreamerEndpoint": "lightstreamerEndpoint"
           }
         },
 
@@ -53,6 +57,62 @@
             "CST": "{{CST}}",
             "X-SECURITY-TOKEN": "{{XST}}"
           }
+        }
+      }
+    ]
+  },
+
+  "Streaming": {
+    "Provider": "Lightstreamer",
+
+    "Ls": {
+      "Endpoint": "{{Vars.LightStreamerEndpoint}}",
+      "AdapterSet": "DEFAULT"
+    },
+
+    "Subscriptions": [
+      {
+        "ReferenceId": "positions",
+        "Mode": "DISTINCT",
+
+        "Items": [
+          "TRADE:"
+        ],
+
+        "Fields": [
+          "OPU",
+          "WOU",
+          "CONFIRMS"
+        ],
+
+        "IngestTemplate": {
+          "type": "snapshot",
+          "broker": "IG",
+
+          "account": "{{Vars.AccountId}}",
+          "dealId": "{{item.dealId}}",
+
+          
+          "epic": "IG.{{item.epic}}",
+
+          
+          "direction": "{{item.direction}}",
+
+          
+          "size": "{{item.size}}",
+
+          
+          "openLevel": "{{item.openLevel}}",
+
+          
+          "bid": "{{item.bid}}",
+          "ask": "{{item.offer}}",
+
+          
+          "valuePerPoint": "{{item.valuePerPoint}}",
+
+          
+          "currency": "{{item.currency}}"
         }
       }
     ]

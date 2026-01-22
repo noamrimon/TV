@@ -24,7 +24,7 @@
         public decimal ValuePerPoint { get; set; }
         public string Currency { get; set; } = "USD";
         public bool IsWatched { get; set; }
-
+        public string CurrencySymbol { get; set; } = "$";
     public decimal SpreadPips
     {
         get

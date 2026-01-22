@@ -11,7 +11,7 @@
     "TimeoutSeconds": 30
   },
   "Vars": {
-    "AccessToken": "eyJhbGciOiJFUzI1NiIsIng1dCI6IjY3NEM0MjFEMzZEMUE1OUNFNjFBRTIzMjMyOTVFRTAyRTc3MDMzNTkifQ.eyJvYWEiOiI3Nzc3NSIsImlzcyI6Im9hIiwiYWlkIjoiMTA5IiwidWlkIjoic3xteVZOemlHUUc5ZzR4NEFkcDh1dz09IiwiY2lkIjoic3xteVZOemlHUUc5ZzR4NEFkcDh1dz09IiwiaXNhIjoiRmFsc2UiLCJ0aWQiOiIyMDAyIiwic2lkIjoiYmVkMTEwZWFmNmI1NDRjODgxM2E3Y2MxY2I0NjY1YTciLCJkZ2kiOiI4NCIsImV4cCI6IjE3Njg5ODI0NzciLCJvYWwiOiIxRiIsImlpZCI6IjU5YmIxOTNmNGM1MTRmZTEyNWMwMDhkZTRjNTUxZWIwIn0.bjZFhYPwyHH-qYIs_PrbTvenp6qu1KSRCXOWi169jzz0k_uudlQzkauVXCo8O3rSDwNZHkiivzl4Zw8bbCUPFQ",
+    "AccessToken": "eyJhbGciOiJFUzI1NiIsIng1dCI6IjY3NEM0MjFEMzZEMUE1OUNFNjFBRTIzMjMyOTVFRTAyRTc3MDMzNTkifQ.eyJvYWEiOiI3Nzc3NSIsImlzcyI6Im9hIiwiYWlkIjoiMTA5IiwidWlkIjoic3xteVZOemlHUUc5ZzR4NEFkcDh1dz09IiwiY2lkIjoic3xteVZOemlHUUc5ZzR4NEFkcDh1dz09IiwiaXNhIjoiRmFsc2UiLCJ0aWQiOiIyMDAyIiwic2lkIjoiNzZhNGIxODdiMGVmNDQ1Y2FhZmIzZTBlY2Y3NDliYjgiLCJkZ2kiOiI4NCIsImV4cCI6IjE3NjkxNzI3NzAiLCJvYWwiOiIxRiIsImlpZCI6IjU5YmIxOTNmNGM1MTRmZTEyNWMwMDhkZTRjNTUxZWIwIn0.mtZT-1u876qwwXsNa27PZMh9pWQCzZ2shKVtG3LL1hA-y0dYH-iE0-um1TYnQcpudyXgRB0kBQEU8-IC7jBdPQ",
     "ContextId": "{{Guid}}"
   },
   "Operations": [
@@ -92,7 +92,7 @@
         "bid": "{{item.PositionView.Bid}}",
         "ask": "{{item.PositionView.Ask}}",
         "valuePerPoint": 1,
-        "currency": "{{item.Currency}}"
+        "currency": "{{item.DisplayAndFormat.Currency}}"
       }
     }
   }

@@ -1,6 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Security.Principal;
 using TVWeb.Models;
+using TVWeb.Shared;
 
 namespace TVWeb.Services;
 
@@ -14,6 +15,7 @@ public class PositionsStore
     {
         foreach (var s in snapshots)
         {
+
             // Normalize helper
             static string NormalizeDir(string? dir)
                 => string.IsNullOrWhiteSpace(dir) ? "" : dir.Trim().ToUpperInvariant();
@@ -31,6 +33,9 @@ public class PositionsStore
                         dir = InferDirectionFromSize(s.Size);
                     }
 
+                    var quote = CurrencyHelper.GetQuoteCurrencyFromEpic(s.Epic);
+                    var symbol = CurrencyHelper.MapCurrencySymbol(quote);
+
                     return new PositionModel
                     {
                         Id = s.DealId,
@@ -43,12 +48,21 @@ public class PositionsStore
                         OpenLevel = s.OpenLevel ?? 0,
                         Size = s.Size,
                         ValuePerPoint = s.ValuePerPoint ?? 1,
-                        Currency = s.Currency ?? "USD"
+
+                        Currency = quote,
+                        CurrencySymbol = symbol
                     };
                 },
                 // UPDATE
                 (key, existing) =>
                 {
+
+                    var quote = CurrencyHelper.GetQuoteCurrencyFromEpic(s.Epic);
+                    var symbol = CurrencyHelper.MapCurrencySymbol(quote);
+
+                    existing.Currency = quote;
+                    existing.CurrencySymbol = symbol;
+
                     existing.Bid = s.Bid ?? existing.Bid;
                     existing.Ask = s.Ask ?? existing.Ask;
                     existing.OpenLevel = s.OpenLevel ?? existing.OpenLevel;

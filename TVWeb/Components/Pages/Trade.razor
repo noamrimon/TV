@@ -119,7 +119,8 @@
                         <!-- PROFIT / LOSS -->
                         <td class="pl-column">
                             <span class="pl-value @(pos.ProfitLoss >= 0 ? "text-success" : "text-danger")">
-                                @GetFormattedPL(pos)
+                                <span>@pos.CurrencySymbol @pos.ProfitLoss</span>
+                                @* @GetFormattedPL(pos) *@
                             </span>
                         </td>
 
