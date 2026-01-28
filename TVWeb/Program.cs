@@ -1,5 +1,6 @@
 
 using Microsoft.AspNetCore.Mvc;
+using System;
 using System.Globalization;
 using System.Net;
 using System.Security.Principal;
@@ -39,20 +40,29 @@ app.MapPost("/api/stream/positions", async (HttpContext http) =>
 {
     try
     {
+        // Debugging request - remove when done
+        http.Request.EnableBuffering();
+        var length = http.Request.ContentLength;
+        http.Request.Body.Position = 0;
+        using var reader = new StreamReader(http.Request.Body, leaveOpen: true);
+        string rawBody = await reader.ReadToEndAsync();
+        http.Request.Body.Position = 0;
+        Console.WriteLine($"RAW INCOMING: {rawBody}");
+        /////////////////////////////////////////////////
+
         if (!http.Request.Headers.TryGetValue("X-INGEST-KEY", out var keys)
             || keys.Count == 0
             || !CryptographicEquals(keys[0], ingestKey))
             return Results.StatusCode((int)HttpStatusCode.Forbidden);
 
-        string body;
-        using (var reader = new StreamReader(http.Request.Body))
-            body = await reader.ReadToEndAsync();
-        Console.WriteLine($"[INGEST] body: {body}");
-
+        string body = await new StreamReader(http.Request.Body).ReadToEndAsync();
+        Console.WriteLine($">>>> [INGEST-RECEIVE] Length: {body.Length} | StartsWith '[': {body.TrimStart().StartsWith("[")}");
         if (string.IsNullOrWhiteSpace(body))
             return Results.BadRequest("Empty body");
 
         var trimmed = body.TrimStart();
+
+        // --- CASE A: ARRAY (Saxo Initial Load / IG REST Load) ---
         if (trimmed.StartsWith("["))
         {
             using var doc = JsonDocument.Parse(body);
@@ -64,38 +74,42 @@ app.MapPost("/api/stream/positions", async (HttpContext http) =>
                 var type = el.TryGetProperty("type", out var t) ? t.GetString() : "snapshot";
                 if (!string.Equals(type, "snapshot", StringComparison.OrdinalIgnoreCase)) continue;
 
-                var dealId = el.TryGetProperty("dealId", out var d) ? d.GetString() : null;
-                var epic = el.TryGetProperty("epic", out var e) ? e.GetString() : null;
-                if (string.IsNullOrWhiteSpace(dealId) || string.IsNullOrWhiteSpace(epic)) continue;
+                var dealId = TryString(el, "dealId") ?? TryString(el, "DealId");
+                var epic = TryString(el, "epic") ?? TryString(el, "Epic");
+                if (dealId == null)
+                {
+                    Console.WriteLine("!!!! [WEB-DEBUG] Could not find DealId property in array element.");
+                    continue;
+                }
 
-                var dir = el.TryGetProperty("direction", out var dirEl) ? dirEl.GetString() : null;
-                var broker = TryString(el, "broker");
-                var account = TryString(el, "account");
-                var size = TryDec(el, "size") ?? 0m;
-                var bid = TryDec(el, "bid");
-                var ask = TryDec(el, "ask");
-                var open = TryDec(el, "openLevel");
-                var vpp = TryDec(el, "valuePerPoint") ?? 1m;
+                if (string.IsNullOrWhiteSpace(dealId) || string.IsNullOrWhiteSpace(epic)) continue;
 
                 snapshots.Add(new PositionSnapshot(
                     DealId: dealId!,
                     Epic: epic!,
-                    Direction: dir ?? "",
-                    Size: size,
-                    Bid: bid,
-                    Ask: ask,
-                    OpenLevel: open,
+                    Direction: el.TryGetProperty("direction", out var dirEl) ? dirEl.GetString() : "",
+                    Currency: el.TryGetProperty("currency", out var cur) ? cur.GetString() : "",
+                    Size: TryDec(el, "size") ?? 0m,
+                    Bid: TryDec(el, "Bid"),
+                    Ask: TryDec(el, "Ask"),
+                    OpenLevel: TryDec(el, "openLevel"),
                     LastUpdatedUtc: DateTimeOffset.UtcNow,
-                    ValuePerPoint: vpp,
-                    Broker: broker,
-                    Account: account
-
+                    ValuePerPoint: TryDec(el, "valuePerPoint") ?? 1m,
+                    ScalingFactor: TryDec(el, "scalingFactor") ?? 1m,
+                    Broker: TryString(el, "broker"),
+                    Account: TryString(el, "account")
                 ));
             }
 
-            if (snapshots.Count > 0) positionsStore.UpsertRange(snapshots);
+            if (snapshots.Count > 0)
+            {
+                Console.WriteLine($"[INGEST] Upserting {snapshots.Count} positions from Array.");
+                positionsStore.UpsertRange(snapshots);
+            }
             return Results.Ok(new { snapshots = snapshots.Count });
         }
+
+        // --- CASE B: SINGLE OBJECT (Ticks, Closed, Single Saxo Updates) ---
         else
         {
             using var doc = JsonDocument.Parse(body);
@@ -104,81 +118,61 @@ app.MapPost("/api/stream/positions", async (HttpContext http) =>
 
             if (string.Equals(type, "tick", StringComparison.OrdinalIgnoreCase))
             {
-                var epic = root.TryGetProperty("epic", out var e) ? e.GetString() : null;
-                var dealId = root.TryGetProperty("dealId", out var d) ? d.GetString() : null;
+                var epic = TryString(root, "epic");
+                var dealId = TryString(root, "dealId");
+
                 if (string.IsNullOrWhiteSpace(epic) || string.IsNullOrWhiteSpace(dealId))
                     return Results.BadRequest("Tick must include epic and dealId");
 
-                var bid = TryDec(root, "bid");
-                var ask = TryDec(root, "ask");
+                // DIAGNOSTIC LOG: Check if IG trade exists in store
+                bool exists = positionsStore.GetPositions().Any(p => p.Id.Equals(dealId, StringComparison.OrdinalIgnoreCase));
+                Console.WriteLine($">>>> [IG-TICK] DealId: {dealId} | Exists In Store: {exists} | Bid: {TryDec(root, "bid")}");
 
-                DateTimeOffset? ts = null;
-                if (root.TryGetProperty("timestampUtc", out var tsEl) && tsEl.ValueKind != JsonValueKind.Null)
-                {
-                    if (tsEl.TryGetDateTimeOffset(out var iso)) ts = iso;
-                    else if (tsEl.ValueKind == JsonValueKind.Number && tsEl.TryGetInt64(out var ms))
-                        ts = DateTimeOffset.FromUnixTimeMilliseconds(ms);
-                }
-                ts ??= DateTimeOffset.UtcNow;
-
-                positionsStore.ApplyTick(new PriceTick(epic!, dealId!, bid, ask, ts));
+                positionsStore.ApplyTick(new PriceTick(epic!, dealId!, TryDec(root, "bid"), TryDec(root, "ask"), DateTimeOffset.UtcNow));
                 return Results.Ok(new { tick = true });
             }
             else if (string.Equals(type, "closed", StringComparison.OrdinalIgnoreCase))
             {
-                var dealId = root.TryGetProperty("dealId", out var d) ? d.GetString() : null;
-                var epic = root.TryGetProperty("epic", out var e) ? e.GetString() : null;
+                var dealId = TryString(root, "dealId");
+                var epic = TryString(root, "epic");
                 if (!string.IsNullOrWhiteSpace(dealId))
                     positionsStore.Remove(dealId!, epic);
                 return Results.Ok(new { closed = dealId });
             }
             else if (string.Equals(type, "snapshot", StringComparison.OrdinalIgnoreCase))
             {
-                // ACCEPT SINGLE SNAPSHOT OBJECTS (SAXO streamer path)
                 var dealId = TryString(root, "dealId");
                 var epic = TryString(root, "epic");
-                if (string.IsNullOrWhiteSpace(dealId) || string.IsNullOrWhiteSpace(epic))
-                    return Results.BadRequest("Snapshot must include non-empty dealId and epic");
-
-                var dir = TryString(root, "direction");
-                var broker = TryString(root, "broker");
-                var account = TryString(root, "account");
-                var size = TryDec(root, "size") ?? 0m;
-                var bid = TryDec(root, "bid");
-                var ask = TryDec(root, "ask");
-                var open = TryDec(root, "openLevel");
-                var vpp = TryDec(root, "valuePerPoint") ?? 1m;
-                var ccy = root.TryGetProperty("currency", out var cEl) ? cEl.GetString() : "USD";
-
+                if (string.IsNullOrWhiteSpace(dealId)) return Results.BadRequest("Missing DealId");
                 positionsStore.UpsertRange(new[]
                 {
                     new PositionSnapshot(
                         DealId: dealId!,
                         Epic: epic!,
-                        Direction: dir ?? "",
-                        Size: size,
-                        Bid: bid,
-                        Ask: ask,
-                        OpenLevel: open,
+                        Direction: TryString(root, "direction") ?? "",
+                        Size: TryDec(root, "size") ?? 0m,
+                        Bid: TryDec(root, "bid"),
+                        Ask: TryDec(root, "ask"),
+                        OpenLevel: TryDec(root, "openLevel"),
                         LastUpdatedUtc: DateTimeOffset.UtcNow,
-                        ValuePerPoint: vpp,
-                        Currency: ccy,
-                        Broker: broker,
-                        Account: account
-                   )
+                        ValuePerPoint: TryDec(root, "valuePerPoint") ?? 1m,
+                        ScalingFactor: TryDec(root, "scalingFactor") ?? 1m,
+                        Currency: TryString(root, "currency") ?? "USD",
+                        Broker: TryString(root, "broker"),
+                        Account: TryString(root, "account")
+                    )
                 });
                 return Results.Ok(new { snapshot = dealId });
             }
-            else
-            {
-                return Results.BadRequest("Unrecognized payload");
-            }
+
+            // This is what fixes CS1643 - ensure every path returns a Result
+            return Results.BadRequest("Unrecognized payload type");
         }
     }
     catch (Exception ex)
     {
         Console.WriteLine($"[INGEST] error: {ex}");
-        return Results.BadRequest("Invalid JSON or payload");
+        return Results.BadRequest("Invalid JSON or internal error");
     }
 });
 

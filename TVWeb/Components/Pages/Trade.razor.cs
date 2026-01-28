@@ -92,7 +92,18 @@ namespace TVWeb.Components.Pages
             }
             return price.ToString("N5", CultureInfo.InvariantCulture).TrimEnd('0').TrimEnd('.');
         }
-
+        private string FormatSize(decimal size)
+        {
+            if (size == 0) return "Err0";
+            int fp = 1;
+            decimal fs = Math.Abs(size);
+            while (fs < 1) 
+            { 
+                fs = fs * 10;
+                fp++;
+            }
+            return size.ToString("F" + fp.ToString(), CultureInfo.InvariantCulture);
+        }
 
         private decimal TotalPLUsd
         {

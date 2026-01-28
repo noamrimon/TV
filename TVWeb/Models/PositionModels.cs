@@ -4,8 +4,8 @@
         string DealId, string Epic, string Direction, decimal Size,
         decimal? Bid = null, decimal? Ask = null, decimal? OpenLevel = null,
         decimal? ProfitLoss = null, string? Currency = "USD",
-        bool IsWatched = false, DateTimeOffset? LastUpdatedUtc = null, decimal? ValuePerPoint = null,
-        string? Broker = null, string? Account = null
+        bool IsWatched = false, DateTimeOffset? LastUpdatedUtc = null, decimal? ValuePerPoint = null, decimal? ScalingFactor = null,
+        string? Broker = null, string? Account = null, string? Type = null, string CurrencySymbol = "$"
     );
 
     public sealed record PriceTick(string Epic, string DealId, decimal? Bid, decimal? Ask, DateTimeOffset? TimestampUtc);
@@ -22,6 +22,7 @@
         public decimal OpenLevel { get; set; }
         public decimal Size { get; set; }
         public decimal ValuePerPoint { get; set; }
+        public decimal ScalingFactor { get; set; }
         public string Currency { get; set; } = "USD";
         public bool IsWatched { get; set; }
         public string CurrencySymbol { get; set; } = "$";
@@ -51,43 +52,29 @@
         }
     }
     public decimal ProfitLoss
+    {
+        get
         {
-            get
-            {
-                if (OpenLevel <= 0 || (Bid <= 0 && Ask <= 0)) return 0;
+            // 1. Validation: If no price has streamed yet, P/L is 0
+            if (OpenLevel <= 0 || (Bid <= 0 && Ask <= 0)) return 0;
 
-                bool isBuy = Type.Contains("BUY", StringComparison.OrdinalIgnoreCase);
-                decimal currentPrice = isBuy ? Bid : Ask;
+            // 2. Determine Close Price: 
+            // If you are LONG (BUY), you exit at the BID.
+            // If you are SHORT (SELL), you exit at the ASK.
+            bool isBuy = Type.Contains("BUY", StringComparison.OrdinalIgnoreCase);
+            decimal currentPrice = isBuy ? Bid : Ask;
 
-                // 1. Calculate raw difference (e.g., -0.00033)
-                decimal diff = isBuy ? (currentPrice - OpenLevel) : (OpenLevel - currentPrice);
+            // 3. Calculate Directional Difference
+            // BUY: (Market - Open) | SELL: (Open - Market)
+            decimal diff = isBuy ? (currentPrice - OpenLevel) : (OpenLevel - currentPrice);
 
-                decimal multiplier = 1.0m;
-                string s = Symbol.ToUpper();
+            // 4. THE UNIVERSAL FORMULA
+            // ScalingFactor: 0.001 for Bitcoin, 100 or 1000 for JPY, 1.0 for Saxo.
+            // ValuePerPoint: The 'Contract Size' or 'Currency Value' per point.
+            // Size: The amount of contracts or units.
+            decimal total = diff * ScalingFactor * ValuePerPoint * Math.Abs(Size);
 
-                // 2. Determine Multiplier
-                if (currentPrice >= 1000)
-                {
-                    multiplier = 0.0001m; // For EURUSD at 11637
-                }
-                else if (s.Contains("JPY"))
-                {
-                    // If your JPY is working with 1.0, keep it. 
-                    // If JPY becomes 0, this needs to be 1.0.
-                    multiplier = 1.0m;
-                }
-                else
-                {
-                    // For ALL standard FX (AUDUSD, USDCAD, GBPUSD)
-                    multiplier = 1.0m;
-                }
-
-                // 3. CRITICAL: Multiply everything FIRST, then round at the very end.
-                decimal total = diff * multiplier * Math.Abs(Size) * ValuePerPoint;
-
-                return Math.Round(total, 2);
-            }
-
+            return Math.Round(total, 2);
         }
-
     }
+}

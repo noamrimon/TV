@@ -33,7 +33,8 @@ public class PositionsStore
                         dir = InferDirectionFromSize(s.Size);
                     }
 
-                    var quote = CurrencyHelper.GetQuoteCurrencyFromEpic(s.Epic);
+                    //var quote = CurrencyHelper.GetQuoteCurrencyFromEpic(s.Epic);
+                    var quote = s.Currency;
                     var symbol = CurrencyHelper.MapCurrencySymbol(quote);
 
                     return new PositionModel
@@ -47,8 +48,8 @@ public class PositionsStore
                         Ask = s.Ask ?? 0,
                         OpenLevel = s.OpenLevel ?? 0,
                         Size = s.Size,
-                        ValuePerPoint = s.ValuePerPoint ?? 1,
-
+                        ValuePerPoint = s.ValuePerPoint ?? 1m,
+                        ScalingFactor = s.ScalingFactor ?? 1m,
                         Currency = quote,
                         CurrencySymbol = symbol
                     };
@@ -57,7 +58,7 @@ public class PositionsStore
                 (key, existing) =>
                 {
 
-                    var quote = CurrencyHelper.GetQuoteCurrencyFromEpic(s.Epic);
+                    var quote = s.Currency;
                     var symbol = CurrencyHelper.MapCurrencySymbol(quote);
 
                     existing.Currency = quote;

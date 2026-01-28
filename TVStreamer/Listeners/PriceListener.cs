@@ -1,70 +1,58 @@
-﻿
-using System;
-using System.Globalization;
-using System.Linq;
+﻿using System.Globalization;
 using com.lightstreamer.client;
 using TVStreamer.Models;
-using TVStreamer.Streaming;
+using TVStreamer.Services;
 
 namespace TVStreamer.Listeners
 {
+    // Ensure it inherits from SubscriptionListener
     sealed class PriceListener : SubscriptionListener
     {
         private readonly string[] _items;
         private readonly List<PositionInfo> _positions;
-        private readonly string _ingestUrl;
-        private readonly string _ingestKey;
+        private readonly PositionIngestService _ingestService;
 
-        public PriceListener(string[] items, List<PositionInfo> positions, string ingestUrl, string ingestKey)
+        public PriceListener(string[] items, List<PositionInfo> positions, PositionIngestService ingestService)
         {
             _items = items;
             _positions = positions;
-            _ingestUrl = ingestUrl;
-            _ingestKey = ingestKey;
+            _ingestService = ingestService;
         }
 
+        // This is the method the Lightstreamer DLL calls automatically
         public void onItemUpdate(ItemUpdate itemUpdate)
         {
+            // 1. Identify which Epic this update belongs to
             var pos = itemUpdate.ItemPos;
             var epic = (pos >= 1 && pos <= _items.Length)
-                ? _items[pos - 1].Split(':').Last()
+                ? _items[pos - 1].Replace("MARKET:", "") // Strip the prefix
                 : string.Empty;
 
-            var deal = _positions.FirstOrDefault(p => p.Epic == epic);
-            if (deal is null) return;
-
-            // Ladder first; fallback to top-of-book BID/OFFER when ladder absent
-            var bidStr = itemUpdate.getValue("BIDPRICE1") ?? itemUpdate.getValue("BID");
-            var askStr = itemUpdate.getValue("ASKPRICE1") ?? itemUpdate.getValue("OFFER");
+            // 2. Extract Prices (IG uses BID/OFFER or BIDPRICE1/ASKPRICE1)
+            var bidStr = itemUpdate.getValue("BID");
+            var askStr = itemUpdate.getValue("OFFER");
 
             decimal? bid = decimal.TryParse(bidStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var b) ? b : null;
             decimal? ask = decimal.TryParse(askStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var a) ? a : null;
 
-            // TIMESTAMP is UTC millis on PRICE items
-            DateTimeOffset? ts = null;
-            var tsStr = itemUpdate.getValue("TIMESTAMP");
-            if (long.TryParse(tsStr, out var utcMillis))
+            // 3. Find matching deals and push to the Ingest Service
+            var deals = _positions.Where(p => p.Epic == epic).ToList();
+
+            if (deals.Count == 0) return;
+
+            foreach (var deal in deals)
             {
-                try { ts = DateTimeOffset.FromUnixTimeMilliseconds(utcMillis); } catch { ts = null; }
+                // THIS is where the data leaves the listener and hits your service
+                _ = _ingestService.UpdatePriceAsync(deal.DealId, epic, bid, ask);
             }
 
-            var payload = new
-            {
-                type = "tick",
-                epic,
-                dealId = deal.DealId,
-                bid,
-                ask,
-                timestampUtc = ts
-            };
-
-            _ = HttpPoster.PostJsonAsync(_ingestUrl, _ingestKey, payload);
-            Console.WriteLine($"[LS] Tick {epic} Bid={bidStr ?? "∅"} Ask={askStr ?? "∅"} Ts={(ts.HasValue ? ts.Value.ToString("HH:mm:ss") : "∅")}");
+            // Console.WriteLine($"[TICK] {epic} Bid: {bid} Ask: {ask}");
         }
 
-        public void onSubscription() => Console.WriteLine("[LS] PRICE subscription confirmed.");
-        public void onSubscriptionError(int code, string message) => Console.WriteLine($"[LS] PRICE subscription error: {code} - {message}");
-        public void onUnsubscription() => Console.WriteLine("[LS] PRICE unsubscribed.");
+        // Mandatory interface methods
+        public void onSubscription() => Console.WriteLine("[LS] Price Subscription Active.");
+        public void onSubscriptionError(int code, string message) => Console.WriteLine($"[LS] Sub Error: {code} - {message}");
+        public void onUnsubscription() { }
         public void onEndOfSnapshot(string itemName, int itemPos) { }
         public void onClearSnapshot(string itemName, int itemPos) { }
         public void onItemLostUpdates(string itemName, int itemPos, int lostUpdates) { }

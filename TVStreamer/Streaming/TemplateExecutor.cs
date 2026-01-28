@@ -19,6 +19,12 @@ namespace TVStreamer.Streaming
     public static class TemplateExecutor
     {
 
+        public static string Resolve(string template, IReadOnlyDictionary<string, string>? vars)
+        {
+            return ResolveTemplates(template, vars);
+        }
+
+
         private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
         private static bool IsHtml(string s) =>
@@ -195,6 +201,11 @@ namespace TVStreamer.Streaming
                                 if (token != null)
                                     extracted[kv.Key] = token.ToString();
                             }
+                            if (extracted.TryGetValue("currentAccountId", out var accId) && !string.IsNullOrWhiteSpace(accId))
+                            {
+                                extracted["AccountId"] = accId;
+                                extracted["AccountName"] = accId;
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -246,7 +257,8 @@ namespace TVStreamer.Streaming
             }
         }
 
-        private static IDictionary<string, string>? Resolve(Dictionary<string, string>? map, Dictionary<string, string>? vars)
+
+        private static IDictionary<string, string>? Resolve(Dictionary<string, string>? map, IReadOnlyDictionary<string, string>? vars)
         {
             if (map == null) return null;
 
@@ -257,19 +269,26 @@ namespace TVStreamer.Streaming
             return r;
         }
 
-        private static string ResolveTemplates(string input, Dictionary<string, string>? vars)
+
+        private static string ResolveTemplates(string input, IReadOnlyDictionary<string, string>? vars)
         {
-            if (string.IsNullOrEmpty(input)) return input;
+            if (string.IsNullOrEmpty(input))
+                return input;
+
             if (vars != null)
             {
-                foreach (var (k, v) in vars)
+                foreach (var kv in vars)
                 {
+                    var k = kv.Key;
+                    var v = kv.Value;
+
                     input = input.Replace($"{{{{Vars.{k}}}}}", v)
                                  .Replace($"{{{{{k}}}}}", v);
                 }
             }
             return input;
         }
+
 
         private static Dictionary<string, string> Merge(Dictionary<string, string>? a, Dictionary<string, string>? b)
         {

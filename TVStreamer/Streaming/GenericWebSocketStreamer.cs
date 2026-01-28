@@ -1,10 +1,14 @@
 ﻿
+using com.lightstreamer.client;
 using System.Net.Http.Headers;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
+using TVStreamer.Listeners;
+using TVStreamer.Models;
 
 namespace TVStreamer.Streaming;
 
@@ -16,20 +20,20 @@ namespace TVStreamer.Streaming;
 /// - Frames: decode received WS messages (binary or text), filter by ReferenceId,
 ///           map each item via IngestTemplate into payload, and POST to your ingest.
 /// </summary>
-public sealed class GenericWebSocketStreamer : IDisposable
+public sealed class GenericWebSocketStreamer : IStreamer, IDisposable
 {
-
-    private readonly Dictionary<string, SaxoBase> _saxoBases
-        = new(StringComparer.OrdinalIgnoreCase);
-    private readonly SaxoBaseStore _saxoStore = new();
     private readonly HttpClient _http;
     private readonly string _baseUrl;
     private readonly Dictionary<string, string> _vars;
-    private readonly JsonDocument _streamingDoc;  // own the cloned JSON
-    private readonly JsonElement _streaming;      // safe element over cloned doc
+    private readonly JsonDocument _streamingDoc;
+    private readonly JsonElement _streaming;
     private readonly string _ingestUrl;
     private readonly string _ingestKey;
 
+    // CHANGE: Use the Service Interface instead of the Index class
+    private readonly IPositionService _positionService;
+
+    private readonly string _brokerName;
     private ClientWebSocket? _ws;
 
     public GenericWebSocketStreamer(
@@ -39,25 +43,74 @@ public sealed class GenericWebSocketStreamer : IDisposable
         JsonElement streamingObject,
         string ingestUrl,
         string ingestKey,
-        JsonNode? saxoRestNode = null   // NEW
+        IPositionService positionService, // CHANGE THIS PARAMETER
+        string brokerName
     )
-
     {
         _http = http;
         _baseUrl = baseUrl.TrimEnd('/');
         _vars = new(vars ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
-        _streamingDoc = JsonDocument.Parse(streamingObject.GetRawText()); // clone
+        _streamingDoc = JsonDocument.Parse(streamingObject.GetRawText());
         _streaming = _streamingDoc.RootElement;
         _ingestUrl = ingestUrl;
         _ingestKey = ingestKey;
 
-        if (saxoRestNode != null)
-        {
-            _saxoStore.LoadFromRest(saxoRestNode);
-            Console.WriteLine("[SAXO] Loaded PositionBase from REST preload.");
-        }
+        // STORE the service
+        _positionService = positionService;
 
+        _brokerName = brokerName;
     }
+
+    private JsonNode MergeWithBase(JsonNode wsItem)
+    {
+        try
+        {
+            if (wsItem is not JsonObject obj) return wsItem;
+
+            // 1. Identify the Deal
+            var dealId = (obj["PositionId"] ?? obj["DealId"] ?? obj["NetPositionId"])?.ToString();
+            if (string.IsNullOrWhiteSpace(dealId)) return wsItem;
+
+            // 2. FIXED: Call the Service instead of the old Index
+            if (!_positionService.TryGetPosition(_brokerName, dealId, out var bp))
+            {
+                // This is actually a good place to log if you're missing data
+                // Console.WriteLine($"[{_brokerName}] No base data found for deal {dealId}");
+                return wsItem;
+            }
+
+            // 3. Clone the incoming WebSocket item
+            var clone = JsonNode.Parse(wsItem.ToJsonString())!.AsObject();
+
+            // 4. Enrich the JSON (Keep this as is, it's already broker-agnostic)
+            clone["PositionBase"] = new JsonObject
+            {
+                ["Broker"] = _brokerName,
+                ["Account"] = bp.AccountId,
+                ["DealId"] = bp.DealId,
+                ["Amount"] = JsonValue.Create(bp.Amount),
+                ["OpenPrice"] = JsonValue.Create(bp.OpenLevel),
+                ["Uic"] = bp.Uic is null ? null : JsonValue.Create(bp.Uic.Value),
+                ["BuySell"] = bp.Amount < 0 ? "Sell" : "Buy"
+            };
+
+            clone["DisplayAndFormat"] = new JsonObject
+            {
+                ["Symbol"] = bp.Epic,
+                ["Currency"] = bp.Currency
+            };
+
+            clone["Direction"] = bp.Amount < 0 ? "Sell" : "Buy";
+
+            return clone;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{_brokerName}] Merge Error: {ex.Message}");
+            return wsItem;
+        }
+    }
+
 
     // ---------- Case-insensitive property resolver ----------
     private static bool GetPropertyCI(JsonElement obj, string name, out JsonElement value)
@@ -82,8 +135,9 @@ public sealed class GenericWebSocketStreamer : IDisposable
         return false;
     }
 
-    public async Task StartAsync(CancellationToken ct = default)
+    public async Task StartAsync()
     {
+        CancellationToken ct = CancellationToken.None;
         try
         {
             // (A) PreSteps
@@ -115,7 +169,6 @@ public sealed class GenericWebSocketStreamer : IDisposable
             var wsUrl = Resolve(wsUrlTpl, null);   // supports {{Vars.*}} and {{Guid}} (GUID already injected above)
 
             Console.WriteLine("[WS] Preparing connect...");
-            Console.WriteLine($"[WS] Url (resolved): {wsUrl}");
 
             _ws = new ClientWebSocket();
             _ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
@@ -130,8 +183,6 @@ public sealed class GenericWebSocketStreamer : IDisposable
                     Console.WriteLine($"[WS] Header: {name}=(hidden)");
                 }
             }
-
-            Console.WriteLine($"[WS] Connecting: {wsUrl}");
             await _ws.ConnectAsync(new Uri(wsUrl), ct);
             Console.WriteLine("[WS] Connected.");
 
@@ -196,11 +247,7 @@ public sealed class GenericWebSocketStreamer : IDisposable
                 // 2) Resolve placeholders
                 string resolved = Resolve(raw, null);
 
-                // 3) Log (optional)
-                Console.WriteLine("[WS] Resolved Body JSON:");
-                Console.WriteLine(resolved);
-
-                // 4) Send directly
+                // 3) Send directly
                 req.Content = new StringContent(resolved, Encoding.UTF8, GetContentType(reqObj));
             }
 
@@ -372,12 +419,12 @@ public sealed class GenericWebSocketStreamer : IDisposable
                 if (r.MessageType == WebSocketMessageType.Text)
                 {
                     var text = Encoding.UTF8.GetString(bytes);
-                    Console.WriteLine($"[WS] Text frame {bytes.Length} bytes");
+                    //Console.WriteLine($"[WS] Text frame {bytes.Length} bytes");
                     HandleTextFrame(text, refIdWanted, dataArrayPath, ingestObj);
                 }
                 else if (r.MessageType == WebSocketMessageType.Binary)
                 {
-                    Console.WriteLine($"[WS] Binary frame {bytes.Length} bytes");
+                    //Console.WriteLine($"[WS] Binary frame {bytes.Length} bytes");
                     HandleBinaryFrame(bytes, refIdWanted, dataArrayPath, ingestObj);
                 }
             }
@@ -476,13 +523,13 @@ public sealed class GenericWebSocketStreamer : IDisposable
             if (refIdWanted is not null && !string.Equals(refId, refIdWanted, StringComparison.OrdinalIgnoreCase))
                 return;
 
-            Console.WriteLine("[WS-RAW] FRAME BYTES: " + BitConverter.ToString(frame));
-            Console.WriteLine("[WS-RAW] REFID: " + refId + ", PAYLOADFMT: " + fmt + ", PAYLOADLEN: " + payloadLen);
+            //Console.WriteLine("[WS-RAW] FRAME BYTES: " + BitConverter.ToString(frame));
+            //Console.WriteLine("[WS-RAW] REFID: " + refId + ", PAYLOADFMT: " + fmt + ", PAYLOADLEN: " + payloadLen);
 
             if (fmt == 0)
             {
                 var payloadText = Encoding.UTF8.GetString(payloadBytes);
-                Console.WriteLine("[WS-RAW-PAYLOAD] " + payloadText);
+                //Console.WriteLine("[WS-RAW-PAYLOAD] " + payloadText);
                 var node = JsonNode.Parse(payloadText);
                 JsonArray? dataArr = null;
 
@@ -521,33 +568,31 @@ public sealed class GenericWebSocketStreamer : IDisposable
     {
         try
         {
-            // Quick guard: if item is null, just render as-is (template may handle it)
+            var json = itemNode.ToJsonString();
+            Console.WriteLine($"[{_brokerName}] INGESTING: {json}");
+
             if (itemNode is null)
             {
                 Console.WriteLine("[WS-INGEST] Skip: null itemNode");
                 return;
             }
 
-            JsonNode merged;
-            try
-            {
-                merged = _saxoStore.Merge(itemNode);
-            }
-            catch (Exception mex)
-            {
-                Console.WriteLine("[WS-INGEST] Merge failed: " + mex.Message);
-                Console.WriteLine("[WS-INGEST] Raw item:\n" + itemNode.ToJsonString());
-                // Fallback to original item
-                merged = itemNode;
-            }
+            // 1. Perform the generic merge using our thread-safe _baseIndex
+            // This is where 'Size' is added back into the object for ALL brokers
+            var merged = MergeWithBase(itemNode);
 
+            // 2. Render the template using the enriched data
             var payloadText = RenderTemplateObject(ingestTemplate, merged);
-            Console.WriteLine($"[WS] payloadText: {payloadText}");
+
+            // 3. (Optional) Log for debugging - you should see the Amount here now
+            // Console.WriteLine($"[WS] Final Payload: {payloadText}");
+
+            // 4. Send to the Blazor Web App
             _ = HttpPoster.PostJsonAsync(_ingestUrl, _ingestKey, JsonDocument.Parse(payloadText).RootElement);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[WS-ERR] Ingest post: {ex.Message}");
+            Console.WriteLine($"[WS-ERR] Ingest post failed for {_brokerName}: {ex.Message}");
         }
     }
 

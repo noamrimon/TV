@@ -23,6 +23,13 @@ sealed class TradeListener : SubscriptionListener
 
     public void onItemUpdate(ItemUpdate update)
     {
+        Console.WriteLine("DEBUG: Global TradeListener triggered");
+        var opuData = update.getValue("OPU");
+        if (!string.IsNullOrEmpty(opuData))
+        {
+            Console.WriteLine($"[IG-STREAM] Position Update Received: {opuData}");
+            // Here you would parse the JSON and update your PositionService
+        }
         var opuJson = update.getValue("OPU"); // real-time Open Position Update payload (JSON) [3](https://deepwiki.com/joaquinbejar/ig-client/7.3-trade-and-account-streaming)
         if (string.IsNullOrEmpty(opuJson)) return;
 

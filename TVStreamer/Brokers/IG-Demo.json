@@ -12,15 +12,39 @@
     },
     "TimeoutSeconds": 30
   },
-
   "Vars": {
     "ApiKey": "78e135616531b9964faef1fb313d259af63c1544",
+    "AccessToken": "{{GeneratedAccessToken}}",
     "User": "noamlg35demo",
     "Password": "1qaz@WSX",
     "CST": "",
     "XST": "",
     "AccountId": "",
+    "AccountName": "",
     "LightStreamerEndpoint": ""
+  },
+  "BasePositions": {
+    "Method": "GET",
+    "Url": "https://demo-api.ig.com/gateway/deal/positions",
+    "Headers": {
+      "X-IG-API-KEY": "{{Vars.ApiKey}}",
+      "CST": "{{Vars.CST}}",
+      "X-SECURITY-TOKEN": "{{Vars.XST}}",
+      "IG-ACCOUNT-ID": "{{Vars.AccountId}}",
+      "Version": "2",
+      "Accept": "application/json"
+    },
+    "JsonPaths": {
+      "Array": "positions",
+      "DealId": "position.dealId",
+      "Epic": "market.epic",
+      "Amount": "position.size",
+      "OpenLevel": "position.level",
+      "Direction": "position.direction",
+      "Currency": "position.currency",
+      "ScalingFactor": "market.scalingFactor",
+      "ValuePerPoint": "position.contractSize"
+    }
   },
 
   "Auth": {
@@ -44,11 +68,12 @@
         "Extract": {
           "Headers": {
             "CST": "CST",
+            "AccessToken": "X-SECURITY-TOKEN",
             "XST": "X-SECURITY-TOKEN"
           },
           "Json": {
-            "currentAccountId": "currentAccountId",
-            "LightStreamerEndpoint": "lightstreamerEndpoint"
+            "LightStreamerEndpoint": "lightstreamerEndpoint",
+            "AccountId": "currentAccountId"
           }
         },
 
@@ -64,7 +89,6 @@
 
   "Streaming": {
     "Provider": "Lightstreamer",
-
     "Ls": {
       "Endpoint": "{{Vars.LightStreamerEndpoint}}",
       "AdapterSet": "DEFAULT"
@@ -78,40 +102,23 @@
         "Items": [
           "TRADE:"
         ],
-
         "Fields": [
           "OPU",
           "WOU",
           "CONFIRMS"
         ],
-
         "IngestTemplate": {
           "type": "snapshot",
           "broker": "IG",
-
           "account": "{{Vars.AccountId}}",
           "dealId": "{{item.dealId}}",
-
-          
           "epic": "IG.{{item.epic}}",
-
-          
           "direction": "{{item.direction}}",
-
-          
           "size": "{{item.size}}",
-
-          
           "openLevel": "{{item.openLevel}}",
-
-          
           "bid": "{{item.bid}}",
           "ask": "{{item.offer}}",
-
-          
           "valuePerPoint": "{{item.valuePerPoint}}",
-
-          
           "currency": "{{item.currency}}"
         }
       }

@@ -12,7 +12,8 @@ public sealed class BrokerConfig
     public Dictionary<string, string>? Vars { get; set; }
     public AuthSection? Auth { get; set; }
     public List<Operation>? Operations { get; set; }
-
+    public string LogPrefix { get; set; } = "[default]"!;
+    public BasePositionsConfig BasePositions { get; set; } = new();
     public sealed class HttpSection
     {
         public string BaseUrl { get; set; } = default!;
@@ -60,4 +61,26 @@ public sealed class BrokerConfig
         public Dictionary<string,string>? Query { get; set; }
         public object? Body { get; set; }
     }
+
+
+    public class BasePositionsJsonPaths
+    {
+        public string Array { get; set; } = "";
+        public string DealId { get; set; } = "";
+        public string Epic { get; set; } = "";
+        public string Amount { get; set; } = "";
+        public string OpenLevel { get; set; } = "";
+        public string Currency { get; set; } = "";
+        public string Uic { get; set; } = "";
+        public string Direction { get; set; } = "";
+    }
+
+    public class BasePositionsConfig
+    {
+        public string Method { get; set; } = "GET";
+        public string Url { get; set; } = "";
+        public Dictionary<string, string> Headers { get; set; } = new();
+        public BasePositionsJsonPaths JsonPaths { get; set; } = new();
+    }
+
 }

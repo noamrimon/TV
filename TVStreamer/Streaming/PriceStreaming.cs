@@ -1,26 +1,27 @@
 ﻿using com.lightstreamer.client;
 using TVStreamer.Listeners;
 using TVStreamer.Models;
+using TVStreamer.Services;
 
 namespace TVStreamer.Streaming;
 
 public sealed class PriceStreaming
 {
     private readonly LightstreamerClient _client;
-    private readonly string _ingestUrl;
-    private readonly string _ingestKey;
+    private readonly PositionIngestService _ingestService;
     private Subscription? _priceSub;
 
     public PriceStreaming(LightstreamerClient client, string ingestUrl, string ingestKey)
     {
         _client = client;
-        _ingestUrl = ingestUrl;
-        _ingestKey = ingestKey;
+        // Create the service once to pass into listeners
+        _ingestService = new PositionIngestService(ingestUrl, ingestKey);
     }
 
     public void Subscribe(List<PositionInfo> positions, string accountId)
     {
-        var items = positions.Select(p => $"PRICE:{accountId}:{p.Epic}").ToArray();
+        // Logic: IG Prices are usually PRICE:EPIC (account ID is not always in the item name)
+        var items = positions.Select(p => $"PRICE:{p.Epic}").Distinct().ToArray();
         var fields = new[] { "BIDPRICE1", "ASKPRICE1", "BID", "OFFER", "TIMESTAMP" };
 
         if (items.Length == 0)
@@ -31,11 +32,12 @@ public sealed class PriceStreaming
 
         _priceSub = new Subscription("MERGE", items, fields)
         {
-            DataAdapter = "Pricing",
+            DataAdapter = "DEFAULT",
             RequestedSnapshot = "yes"
         };
 
-        _priceSub.addListener(new PriceListener(items, positions, _ingestUrl, _ingestKey));
+        // Pass the ingestService instead of the raw strings
+        _priceSub.addListener(new PriceListener(items, positions, _ingestService));
         _client.subscribe(_priceSub);
 
         Console.WriteLine($"[LS] PRICE subscribed with {items.Length} items.");

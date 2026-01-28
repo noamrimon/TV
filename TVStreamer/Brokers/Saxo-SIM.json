@@ -1,7 +1,21 @@
+
 {
   "Name": "Saxo-SIM",
+  "Enabled": true,
+  "LogPrefix": "[Saxo-SIM]",
+
   "Transport": "Http",
   "BrokerTemplate": "BearerToken",
+
+  "Vars": {
+    "AccessToken": "eyJhbGciOiJFUzI1NiIsIng1dCI6IjY3NEM0MjFEMzZEMUE1OUNFNjFBRTIzMjMyOTVFRTAyRTc3MDMzNTkifQ.eyJvYWEiOiI3Nzc3NSIsImlzcyI6Im9hIiwiYWlkIjoiMTA5IiwidWlkIjoic3xteVZOemlHUUc5ZzR4NEFkcDh1dz09IiwiY2lkIjoic3xteVZOemlHUUc5ZzR4NEFkcDh1dz09IiwiaXNhIjoiRmFsc2UiLCJ0aWQiOiIyMDAyIiwic2lkIjoiNDhiZDQ0NDFiOGRhNDI1NmE4MmVmOTkwZDkxYmMzYjAiLCJkZ2kiOiI4NCIsImV4cCI6IjE3Njk2Mjg2MjEiLCJvYWwiOiIxRiIsImlpZCI6IjU5YmIxOTNmNGM1MTRmZTEyNWMwMDhkZTRjNTUxZWIwIn0.NZC-gq3maP7Kii1xU7DNiCElVGtF-HxOu501Drodlkvr0j5M7Lk29iR3mfo0LIKIurbs4R0N7Aq85CspQZ2ZWg",
+    "ContextId": "{{Guid}}"
+  },
+
+  "Authentication": {
+    "Type": "BearerToken"
+  },
+
   "Http": {
     "BaseUrl": "https://gateway.saxobank.com/sim/openapi",
     "DefaultHeaders": {
@@ -10,19 +24,29 @@
     },
     "TimeoutSeconds": 30
   },
-  "Vars": {
-    "AccessToken": "eyJhbGciOiJFUzI1NiIsIng1dCI6IjY3NEM0MjFEMzZEMUE1OUNFNjFBRTIzMjMyOTVFRTAyRTc3MDMzNTkifQ.eyJvYWEiOiI3Nzc3NSIsImlzcyI6Im9hIiwiYWlkIjoiMTA5IiwidWlkIjoic3xteVZOemlHUUc5ZzR4NEFkcDh1dz09IiwiY2lkIjoic3xteVZOemlHUUc5ZzR4NEFkcDh1dz09IiwiaXNhIjoiRmFsc2UiLCJ0aWQiOiIyMDAyIiwic2lkIjoiNzZhNGIxODdiMGVmNDQ1Y2FhZmIzZTBlY2Y3NDliYjgiLCJkZ2kiOiI4NCIsImV4cCI6IjE3NjkxNzI3NzAiLCJvYWwiOiIxRiIsImlpZCI6IjU5YmIxOTNmNGM1MTRmZTEyNWMwMDhkZTRjNTUxZWIwIn0.mtZT-1u876qwwXsNa27PZMh9pWQCzZ2shKVtG3LL1hA-y0dYH-iE0-um1TYnQcpudyXgRB0kBQEU8-IC7jBdPQ",
-    "ContextId": "{{Guid}}"
-  },
-  "Operations": [
-    {
-      "Name": "GetPositions",
-      "Method": "GET",
-      "Path": "/port/v1/positions/me?$top=200&FieldGroups=PositionBase,PositionView,DisplayAndFormat"
+
+  "BasePositions": {
+    "Method": "GET",
+    "Url": "https://gateway.saxobank.com/sim/openapi/port/v1/positions/me?$top=200&FieldGroups=PositionBase,PositionView,DisplayAndFormat",
+    "Headers": {
+      "Authorization": "Bearer {{Vars.AccessToken}}",
+      "Accept": "application/json"
+    },
+    "JsonPaths": {
+      "Array": "Data",
+      "DealId": "PositionId",
+      "Epic": "DisplayAndFormat.Symbol",
+      "Amount": "PositionBase.Amount",
+      "OpenLevel": "PositionBase.OpenPrice",
+      "Currency": "DisplayAndFormat.Currency",
+      "Direction": "PositionView.CurrentPriceType",
+      "Uic": "PositionBase.Uic"
     }
-  ],
+  },
+
   "Streaming": {
     "Provider": "WebSocket",
+
     "PreSteps": [
       {
         "Request": {
@@ -84,13 +108,17 @@
         "type": "snapshot",
         "broker": "SAXO",
         "account": "{{Vars.AccountKey}}",
+
         "dealId": "{{item.PositionId}}",
         "epic": "SAXO-{{coalesce(item.DisplayAndFormat.Symbol, item.PositionBase.Uic)}}",
+
         "direction": "{{coalesce(item.Direction, item.PositionBase.BuySell)}}",
         "size": "{{item.PositionBase.Amount}}",
         "openLevel": "{{item.PositionBase.OpenPrice}}",
+
         "bid": "{{item.PositionView.Bid}}",
         "ask": "{{item.PositionView.Ask}}",
+
         "valuePerPoint": 1,
         "currency": "{{item.DisplayAndFormat.Currency}}"
       }
